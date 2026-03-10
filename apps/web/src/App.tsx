@@ -1,36 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactECharts from "echarts-for-react";
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Divider,
-  Form,
-  Input,
-  InputNumber,
-  Layout,
-  List,
-  message,
-  Row,
-  Select,
-  Space,
-  Spin,
-  Statistic,
-  Table,
-  Tabs,
-  Tag,
-  Typography
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { Alert, Button, Form, Input, InputNumber, Select, Spin, message } from "antd";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
 
-const { Header, Content } = Layout;
-const { Title, Text } = Typography;
-
 type GameTab = "owned" | "recent" | "top";
 type CorrectionType = "SET_TOTAL" | "ADD_DELTA";
+type PlaytimeSource = "official" | "corrected" | "manual-only";
 
 interface User {
   id: string;
@@ -43,7 +19,7 @@ interface DashboardSummary {
   totalPriceJpy: number;
   recent30Minutes: number;
   lastSyncAt: string | null;
-  dataSource: Record<"official" | "corrected" | "manual-only", number>;
+  dataSource: Record<PlaytimeSource, number>;
 }
 
 interface DashboardCharts {
@@ -60,7 +36,7 @@ interface GameItem {
   priceJpy: number | null;
   effectivePlaytime: {
     totalMinutes: number;
-    source: "official" | "corrected" | "manual-only";
+    source: PlaytimeSource;
   };
 }
 
@@ -74,26 +50,145 @@ interface CorrectionItem {
   revokedAt: string | null;
 }
 
-function formatMinutes(minutes: number): string {
+const FALLBACK_COVERS = [
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co1r7h.jpg",
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co1mxf.jpg",
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co1q7d.jpg",
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co2lb5.jpg",
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co5vmg.jpg",
+  "https://images.igdb.com/igdb/image/upload/t_cover_big/co6j0z.jpg"
+];
+
+function parseStoredUser(): User | null {
+  const token = getToken();
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = JSON.parse(window.atob(base64));
+    return {
+      id: String(decoded.userId ?? ""),
+      email: String(decoded.email ?? "")
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getNickname(email?: string | null): string {
+  if (!email) return "玩家";
+  return email.split("@")[0] || "玩家";
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+  return fallback;
+}
+
+function formatCurrency(value: number): string {
+  return `¥${value.toLocaleString("zh-CN")}`;
+}
+
+function formatSimpleDate(value: string | null): string {
+  if (!value) return "暂无记录";
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function formatRelativeTime(value: string | null): string {
+  if (!value) return "尚未同步";
+  const diff = Date.now() - Date.parse(value);
+  const minutes = Math.max(1, Math.floor(diff / 60000));
+  if (minutes < 60) return `${minutes}分钟前更新`;
   const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
+  if (hours < 24) return `${hours}小时前更新`;
+  const days = Math.floor(hours / 24);
+  return `${days}天前更新`;
 }
 
-function formatDate(value: string | null): string {
-  if (!value) return "-";
-  return new Date(value).toLocaleString();
+function formatDuration(minutes: number, long = false): string {
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  if (!long) {
+    if (hours <= 0) return `${minutes}m`;
+    return restMinutes > 0 ? `${hours}h${restMinutes}m` : `${hours}h`;
+  }
+  if (hours <= 0) return `${minutes}分钟`;
+  return restMinutes > 0 ? `${hours}小时${restMinutes}分钟` : `${hours}小时`;
 }
 
-function sourceTag(source: "official" | "corrected" | "manual-only") {
-  if (source === "official") return <Tag color="blue">Official</Tag>;
-  if (source === "corrected") return <Tag color="gold">Corrected</Tag>;
-  return <Tag color="purple">Manual Only</Tag>;
+function formatPlaytimeBadge(minutes: number): string {
+  if (minutes < 60) return "<1h";
+  return `${Math.floor(minutes / 60)}h`;
+}
+
+function formatSourceText(source: PlaytimeSource): string {
+  if (source === "official") return "官方";
+  if (source === "corrected") return "已修正";
+  return "手动";
+}
+
+function buildDonutOption(charts: DashboardCharts | null, recent30Minutes: number) {
+  const colors = ["#111111", "#1d1d1d", "#2f2a33", "#b79dc4", "#e5ddd7"];
+  const chartData = (charts?.donut ?? []).slice(0, 5).map((item, index) => ({
+    value: item.value,
+    name: item.name,
+    itemStyle: {
+      color: colors[index] ?? "#111111"
+    }
+  }));
+
+  return {
+    animationDuration: 700,
+    tooltip: {
+      trigger: "item"
+    },
+    series: [
+      {
+        type: "pie",
+        radius: ["67%", "88%"],
+        center: ["50%", "50%"],
+        padAngle: 2,
+        label: { show: false },
+        labelLine: { show: false },
+        emphasis: { scale: false },
+        data: chartData.length > 0 ? chartData : [{ value: 1, name: "暂无数据", itemStyle: { color: "#d8d1cb" } }]
+      }
+    ],
+    graphic: [
+      {
+        type: "text",
+        left: "center",
+        top: "38%",
+        style: {
+          text: formatDuration(recent30Minutes, false),
+          fontSize: 28,
+          fontWeight: 800,
+          fill: "#111111",
+          fontFamily: "MiSans, HarmonyOS Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+        }
+      },
+      {
+        type: "text",
+        left: "center",
+        top: "57%",
+        style: {
+          text: "近30日",
+          fontSize: 12,
+          fontWeight: 500,
+          fill: "#8f8b88",
+          fontFamily: "MiSans, HarmonyOS Sans SC, PingFang SC, Microsoft YaHei, sans-serif"
+        }
+      }
+    ]
+  };
 }
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => getToken());
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => parseStoredUser());
   const [loading, setLoading] = useState(false);
   const [bootLoading, setBootLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
@@ -108,7 +203,6 @@ export default function App() {
     finishedAt: string | null;
     errorSummary: string | null;
   } | null>(null);
-
   const [gameTab, setGameTab] = useState<GameTab>("owned");
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
 
@@ -121,6 +215,14 @@ export default function App() {
     reason: string;
   }>();
 
+  const nickname = getNickname(user?.email);
+
+  const heroCovers = useMemo(() => {
+    const dynamicCovers = games.map((game) => game.coverUrl).filter((cover): cover is string => Boolean(cover));
+    const merged = [...dynamicCovers, ...FALLBACK_COVERS];
+    return merged.slice(0, 6);
+  }, [games]);
+
   const gameOptions = useMemo(
     () =>
       games.map((game) => ({
@@ -130,51 +232,34 @@ export default function App() {
     [games]
   );
 
-  const donutOption = useMemo(
-    () => ({
-      tooltip: {
-        trigger: "item"
-      },
-      legend: {
-        top: "bottom"
-      },
-      series: [
-        {
-          type: "pie",
-          radius: ["45%", "75%"],
-          data: charts?.donut ?? [],
-          label: {
-            formatter: "{b}: {c}m"
-          }
-        }
-      ]
-    }),
-    [charts]
+  const activeCorrections = useMemo(
+    () => corrections.filter((item) => !item.revokedAt),
+    [corrections]
   );
 
-  const rankingOption = useMemo(
-    () => ({
-      tooltip: { trigger: "axis" },
-      xAxis: {
-        type: "category",
-        data: charts?.ranking.map((item) => item.name) ?? [],
-        axisLabel: {
-          rotate: 30
-        }
-      },
-      yAxis: { type: "value" },
-      series: [
-        {
-          data: charts?.ranking.map((item) => item.minutes) ?? [],
-          type: "bar",
-          barWidth: 18,
-          itemStyle: {
-            borderRadius: [8, 8, 0, 0]
-          }
-        }
-      ]
-    }),
-    [charts]
+  const topRanking = useMemo(() => {
+    return (charts?.ranking ?? []).slice(0, 3);
+  }, [charts]);
+
+  const maxRankingMinutes = useMemo(() => {
+    return Math.max(...topRanking.map((item) => item.minutes), 1);
+  }, [topRanking]);
+
+  const donutOption = useMemo(
+    () => buildDonutOption(charts, summary?.recent30Minutes ?? 0),
+    [charts, summary?.recent30Minutes]
+  );
+
+  const platformItems = useMemo(
+    () => [
+      { key: "switch", label: "Switch", count: summary?.totalGames ?? 0, active: true },
+      { key: "steam", label: "Steam", count: 0, active: false },
+      { key: "ps5", label: "PS5", count: 0, active: false },
+      { key: "ps4", label: "PS4", count: 0, active: false },
+      { key: "xbox", label: "Xbox", count: 0, active: false },
+      { key: "mobile", label: "手游", count: 0, active: false }
+    ],
+    [summary?.totalGames]
   );
 
   async function fetchAll(selectedTab: GameTab = gameTab) {
@@ -196,7 +281,7 @@ export default function App() {
       setCorrections(correctionsRes.data.items);
       setSyncStatus(statusRes.data.status);
     } catch (error) {
-      setErrorText(error instanceof Error ? error.message : "Failed to load dashboard");
+      setErrorText(getErrorMessage(error, "页面数据加载失败，请稍后再试"));
     } finally {
       setBootLoading(false);
     }
@@ -211,13 +296,13 @@ export default function App() {
     try {
       setLoading(true);
       const payload = await authForm.validateFields(["email"]);
-      const res = await api.post<{ devCode?: string; message: string }>("/api/auth/login", {
+      const response = await api.post<{ devCode?: string }>("/api/auth/login", {
         email: payload.email
       });
-      setOtpDevCode(res.data.devCode ?? null);
+      setOtpDevCode(response.data.devCode ?? null);
       message.success("验证码已生成，请继续登录");
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "请求验证码失败");
+      message.error(getErrorMessage(error, "获取验证码失败"));
     } finally {
       setLoading(false);
     }
@@ -227,14 +312,14 @@ export default function App() {
     try {
       setLoading(true);
       const values = await authForm.validateFields();
-      const res = await api.post<{ token: string; user: User }>("/api/auth/login", values);
-      saveToken(res.data.token);
-      setToken(res.data.token);
-      setUser(res.data.user);
+      const response = await api.post<{ token: string; user: User }>("/api/auth/login", values);
+      saveToken(response.data.token);
+      setToken(response.data.token);
+      setUser(response.data.user);
       setOtpDevCode(null);
-      message.success("登录成功");
+      message.success("已进入游戏墙");
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "登录失败");
+      message.error(getErrorMessage(error, "登录失败"));
     } finally {
       setLoading(false);
     }
@@ -245,11 +330,11 @@ export default function App() {
       setLoading(true);
       const values = await bindForm.validateFields();
       await api.post("/api/accounts/nintendo/bind", values);
-      message.success("账号已绑定并触发首次同步");
+      message.success("账号已绑定，正在使用日服数据刷新页面");
       bindForm.resetFields();
       await fetchAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "绑定失败");
+      message.error(getErrorMessage(error, "绑定账号失败"));
     } finally {
       setLoading(false);
     }
@@ -262,7 +347,7 @@ export default function App() {
       message.success("同步完成");
       await fetchAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "同步失败");
+      message.error(getErrorMessage(error, "同步失败"));
     } finally {
       setLoading(false);
     }
@@ -273,11 +358,11 @@ export default function App() {
       setLoading(true);
       const values = await correctionForm.validateFields();
       await api.post("/api/playtime/corrections", values);
-      message.success("修正已保存");
+      message.success("修正记录已保存");
       correctionForm.resetFields();
       await fetchAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "提交修正失败");
+      message.error(getErrorMessage(error, "提交修正失败"));
     } finally {
       setLoading(false);
     }
@@ -290,10 +375,35 @@ export default function App() {
       message.success("修正已撤销");
       await fetchAll();
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "撤销失败");
+      message.error(getErrorMessage(error, "撤销修正失败"));
     } finally {
       setLoading(false);
     }
+  }
+
+  async function sharePage() {
+    const shareUrl = window.location.href;
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: "Nintendo GameTime",
+          text: "看看我的任天堂游戏墙",
+          url: shareUrl
+        });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        message.success("链接已复制");
+      }
+    } catch {
+      message.info("分享已取消");
+    }
+  }
+
+  function scrollToSettings() {
+    document.getElementById("settings-panel")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    });
   }
 
   function logout() {
@@ -305,321 +415,402 @@ export default function App() {
     setGames([]);
     setCorrections([]);
     setSyncStatus(null);
+    setOtpDevCode(null);
   }
 
-  const correctionColumns: ColumnsType<CorrectionItem> = [
-    {
-      title: "Game ID",
-      dataIndex: "gameId",
-      key: "gameId"
-    },
-    {
-      title: "Type",
-      dataIndex: "type",
-      key: "type",
-      render: (value: CorrectionType) => (
-        <Tag color={value === "SET_TOTAL" ? "cyan" : "geekblue"}>{value}</Tag>
-      )
-    },
-    {
-      title: "Minutes",
-      dataIndex: "minutes",
-      key: "minutes"
-    },
-    {
-      title: "Reason",
-      dataIndex: "reason",
-      key: "reason"
-    },
-    {
-      title: "Created",
-      dataIndex: "createdAt",
-      key: "createdAt",
-      render: (value: string) => formatDate(value)
-    },
-    {
-      title: "Status",
-      key: "status",
-      render: (_, record) =>
-        record.revokedAt ? <Tag color="default">Revoked</Tag> : <Tag color="green">Active</Tag>
-    },
-    {
-      title: "Action",
-      key: "action",
-      render: (_, record) =>
-        record.revokedAt ? null : (
-          <Button type="link" danger onClick={() => revokeCorrection(record.id)}>
-            Revoke
-          </Button>
-        )
-    }
-  ];
+  const gameTabLabels: Record<GameTab, string> = {
+    owned: "最近拥有",
+    recent: "最近在玩",
+    top: "玩得最多"
+  };
 
   if (!token) {
     return (
-      <div className="auth-shell">
-        <Card className="auth-card">
-          <Title level={3}>Nintendo GameTime Login</Title>
-          <Text type="secondary">
-            先获取验证码，再用邮箱 + 验证码登录。开发环境会返回 `devCode`。
-          </Text>
-          <Divider />
+      <div className="auth-page">
+        <div className="auth-wall">
+          {heroCovers.map((cover, index) => (
+            <div
+              key={`${cover}-${index}`}
+              className="auth-wall-cover"
+              style={{ backgroundImage: `url(${cover})` }}
+            />
+          ))}
+        </div>
+        <div className="auth-mask" />
+        <div className="auth-panel">
+          <div className="auth-panel-label">Nintendo GameTime</div>
+          <h1>任天堂游戏墙</h1>
+          <p>实时同步日服游戏数据，并用手动修正补齐缺失时长。</p>
           <Form layout="vertical" form={authForm} initialValues={{ email: "", code: "" }}>
-            <Form.Item name="email" label="Email" rules={[{ required: true, type: "email" }]}>
+            <Form.Item name="email" label="邮箱" rules={[{ required: true, type: "email", message: "请输入正确邮箱" }]}>
               <Input placeholder="you@example.com" />
             </Form.Item>
-            <Form.Item name="code" label="OTP Code">
-              <Input placeholder="6-digit code" />
+            <Form.Item name="code" label="验证码">
+              <Input placeholder="开发环境可直接输入 000000" />
             </Form.Item>
-            <Space>
+            <div className="auth-actions">
               <Button onClick={requestOtp} loading={loading}>
-                Request OTP
+                获取验证码
               </Button>
               <Button type="primary" onClick={login} loading={loading}>
-                Login
+                进入游戏墙
               </Button>
-            </Space>
+            </div>
           </Form>
           {otpDevCode && (
             <Alert
               className="auth-alert"
-              message={`开发验证码: ${otpDevCode}`}
+              message={`当前开发验证码：${otpDevCode}`}
               type="info"
               showIcon
             />
           )}
-        </Card>
+        </div>
       </div>
     );
   }
 
   return (
-    <Layout className="app-layout">
-      <Header className="app-header">
-        <div>
-          <Title level={3} style={{ margin: 0, color: "#ffffff" }}>
-            Nintendo GameTime Dashboard
-          </Title>
-          <Text style={{ color: "#b8bfcc" }}>{user?.email ?? "已登录用户"}</Text>
-        </div>
-        <Space>
-          <Button onClick={() => fetchAll()} loading={bootLoading}>
-            Refresh
-          </Button>
-          <Button type="primary" onClick={runSync} loading={loading}>
-            Manual Sync
-          </Button>
-          <Button danger onClick={logout}>
-            Logout
-          </Button>
-        </Space>
-      </Header>
+    <div className="cn-shell">
+      <div className="cn-surface">
+        <section className="hero-banner">
+          <div className="hero-wall">
+            {heroCovers.map((cover, index) => (
+              <div
+                key={`${cover}-${index}`}
+                className="hero-wall-cover"
+                style={{ backgroundImage: `url(${cover})` }}
+              />
+            ))}
+          </div>
+          <div className="hero-overlay" />
+          <div className="hero-head">
+            <button type="button" className="hero-back-button">
+              游戏墙
+            </button>
+            <button type="button" className="hero-share-button" onClick={sharePage}>
+              分享
+            </button>
+          </div>
+          <div className="hero-copy">
+            <div className="hero-copy-label">游戏墙</div>
+            <h1>
+              共 <span>{summary?.totalGames ?? 0}</span> 款游戏，总价值约{" "}
+              <span>{summary?.totalPriceJpy ?? 0}</span> 人民币
+            </h1>
+            <p>
+              已补齐 {((summary?.dataSource.corrected ?? 0) + (summary?.dataSource["manual-only"] ?? 0))} 款游戏的缺失时长，
+              近 30 日共游玩 {formatDuration(summary?.recent30Minutes ?? 0, true)}
+            </p>
+          </div>
+        </section>
 
-      <Content className="app-content">
-        {errorText && (
-          <Alert
-            message="数据加载异常"
-            description={errorText}
-            type="error"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        <Spin spinning={bootLoading || loading}>
-          <Row gutter={[16, 16]}>
-            <Col xs={24} md={12} lg={6}>
-              <Card>
-                <Statistic title="Total Games" value={summary?.totalGames ?? 0} />
-              </Card>
-            </Col>
-            <Col xs={24} md={12} lg={6}>
-              <Card>
-                <Statistic title="Total Playtime" value={formatMinutes(summary?.totalMinutes ?? 0)} />
-              </Card>
-            </Col>
-            <Col xs={24} md={12} lg={6}>
-              <Card>
-                <Statistic title="Total Price (JPY)" value={summary?.totalPriceJpy ?? 0} />
-              </Card>
-            </Col>
-            <Col xs={24} md={12} lg={6}>
-              <Card>
-                <Statistic title="Recent 30 Days" value={formatMinutes(summary?.recent30Minutes ?? 0)} />
-              </Card>
-            </Col>
-          </Row>
+        <div className="sheet-content">
+          {errorText && (
+            <Alert
+              className="page-alert"
+              message="页面数据加载失败"
+              description={errorText}
+              type="error"
+              showIcon
+            />
+          )}
 
-          <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
-            <Col xs={24} lg={12}>
-              <Card title="Nintendo Account Binding">
+          <Spin spinning={bootLoading || loading}>
+            <section className="platform-strip">
+              {platformItems.map((item) => (
+                <div
+                  key={item.key}
+                  className={`platform-item ${item.active ? "platform-item-active" : ""}`}
+                >
+                  <div className="platform-name">{item.label}</div>
+                  <div className="platform-count">{item.count}款</div>
+                </div>
+              ))}
+            </section>
+
+            <section className="profile-card">
+              <div className="profile-watermark">NS</div>
+              <div className="profile-head">
+                <div className="profile-avatar">{nickname.slice(0, 2).toUpperCase()}</div>
+                <div className="profile-meta">
+                  <div className="profile-name-row">
+                    <strong>{nickname}</strong>
+                    <span>{formatRelativeTime(summary?.lastSyncAt ?? null)}</span>
+                    <button type="button" className="inline-action" onClick={runSync}>
+                      点击更新
+                    </button>
+                  </div>
+                  <div className="profile-tags">
+                    <span className="mini-tag">日本</span>
+                    <button type="button" className="inline-action" onClick={scrollToSettings}>
+                      添加账号
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="profile-stats">
+                <div className="stat-block">
+                  <div className="stat-label">游戏数</div>
+                  <div className="stat-value">{summary?.totalGames ?? 0}</div>
+                  <div className="stat-note">已同步 Switch</div>
+                </div>
+                <div className="stat-block">
+                  <div className="stat-label">游戏时长</div>
+                  <div className="stat-value">{formatDuration(summary?.totalMinutes ?? 0, false)}</div>
+                  <div className="stat-note">含手动修正</div>
+                </div>
+                <div className="stat-block">
+                  <div className="stat-label">总价值</div>
+                  <div className="stat-value">{formatCurrency(summary?.totalPriceJpy ?? 0)}</div>
+                  <div className="stat-note">日服估算</div>
+                </div>
+                <div className="stat-block">
+                  <div className="stat-label">手动修正</div>
+                  <div className="stat-value">{activeCorrections.length}</div>
+                  <div className="stat-note">当前生效</div>
+                </div>
+              </div>
+
+              <div className="playtime-panel">
+                <div className="playtime-panel-head">
+                  <div>
+                    <div className="playtime-title">近30日游玩时间</div>
+                    <div className="playtime-subtitle">{formatDuration(summary?.recent30Minutes ?? 0, true)}</div>
+                  </div>
+                  <div className="year-link">年度总结</div>
+                </div>
+                <div className="playtime-panel-body">
+                  <div className="donut-panel">
+                    <ReactECharts option={donutOption} style={{ height: 220 }} />
+                  </div>
+                  <div className="ranking-panel">
+                    {topRanking.length > 0 ? (
+                      topRanking.map((item, index) => (
+                        <div key={item.gameId} className="ranking-item">
+                          <div className="ranking-bar-track">
+                            <div
+                              className={`ranking-bar-fill ranking-bar-fill-${index + 1}`}
+                              style={{
+                                width: `${Math.max((item.minutes / maxRankingMinutes) * 100, 18)}%`
+                              }}
+                            />
+                          </div>
+                          <div className="ranking-meta">
+                            <span className="ranking-name">{item.name}</span>
+                            <span className="ranking-time">{formatDuration(item.minutes, false)}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-block">绑定账号后会在这里显示近30日排行</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {syncStatus?.errorSummary && (
+                <Alert
+                  className="sync-alert"
+                  type="warning"
+                  message={`最近一次同步异常：${syncStatus.errorSummary}`}
+                  showIcon
+                />
+              )}
+            </section>
+
+            <section className="games-section">
+              <div className="section-head">
+                <div className="game-tabs">
+                  {(Object.keys(gameTabLabels) as GameTab[]).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`game-tab-button ${gameTab === tab ? "game-tab-active" : ""}`}
+                      onClick={() => {
+                        setGameTab(tab);
+                        fetchAll(tab).catch(() => undefined);
+                      }}
+                    >
+                      {gameTabLabels[tab]}
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="view-toggle" onClick={scrollToSettings}>
+                  管理
+                </button>
+              </div>
+
+              <div className="games-grid">
+                {games.map((game, index) => (
+                  <article key={game.id} className="game-card">
+                    <div
+                      className="game-card-cover"
+                      style={{
+                        backgroundImage: `url(${game.coverUrl ?? FALLBACK_COVERS[index % FALLBACK_COVERS.length]})`
+                      }}
+                    >
+                      <div className="game-playtime-badge">
+                        {formatPlaytimeBadge(game.effectivePlaytime.totalMinutes)}
+                      </div>
+                      <div className="game-card-gradient" />
+                      <div className="game-card-meta">
+                        <div className="game-card-title">{game.title}</div>
+                        <div className="game-card-action">
+                          {game.effectivePlaytime.source === "official"
+                            ? "官方同步"
+                            : `${formatSourceText(game.effectivePlaytime.source)}时长`}
+                        </div>
+                        <div className="game-card-date">
+                          {gameTab === "owned"
+                            ? `${formatSimpleDate(game.ownedAt)} 拥有`
+                            : gameTab === "recent"
+                              ? `${formatSimpleDate(game.lastPlayedAt)} 最近游玩`
+                              : `${formatCurrency(game.priceJpy ?? 0)} / ${formatDuration(game.effectivePlaytime.totalMinutes, false)}`}
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section id="settings-panel" className="tool-section">
+              <div className="tool-card">
+                <div className="tool-card-head">
+                  <div>
+                    <h3>账号同步设置</h3>
+                    <p>绑定 Nintendo 会话后即可自动拉取日服数据，也支持手动刷新。</p>
+                  </div>
+                  <button type="button" className="soft-button" onClick={runSync}>
+                    立即同步
+                  </button>
+                </div>
+                <div className="tool-metrics">
+                  <span>官方：{summary?.dataSource.official ?? 0}</span>
+                  <span>已修正：{summary?.dataSource.corrected ?? 0}</span>
+                  <span>手动：{summary?.dataSource["manual-only"] ?? 0}</span>
+                </div>
                 <Form
-                  form={bindForm}
                   layout="vertical"
+                  form={bindForm}
                   initialValues={{ region: "JP" as const }}
                   onFinish={bindNintendo}
                 >
                   <Form.Item
                     name="sessionToken"
                     label="Nintendo Session Token"
-                    rules={[{ required: true, min: 8 }]}
+                    rules={[{ required: true, min: 8, message: "请输入有效的会话 Token" }]}
                   >
-                    <Input.Password placeholder="Paste your personal session token" />
+                    <Input.Password placeholder="粘贴你自己的会话 Token" />
                   </Form.Item>
-                  <Form.Item name="region" label="Region">
+                  <Form.Item name="region" label="账号地区">
                     <Select
                       options={[
-                        { value: "JP", label: "JP" },
-                        { value: "GLOBAL", label: "GLOBAL" },
-                        { value: "UNKNOWN", label: "UNKNOWN" }
+                        { value: "JP", label: "日本" },
+                        { value: "GLOBAL", label: "海外" },
+                        { value: "UNKNOWN", label: "未知" }
                       ]}
                     />
                   </Form.Item>
-                  <Button type="primary" htmlType="submit" loading={loading}>
-                    Bind & First Sync
-                  </Button>
-                </Form>
-                <Divider />
-                <Text type="secondary">Last Sync: {formatDate(summary?.lastSyncAt ?? null)}</Text>
-                {syncStatus && (
-                  <div style={{ marginTop: 8 }}>
-                    <Tag color={syncStatus.status === "FAILED" ? "red" : "green"}>
-                      {syncStatus.status}
-                    </Tag>
-                    <Text type="secondary">
-                      Started: {formatDate(syncStatus.startedAt)} | Finished:{" "}
-                      {formatDate(syncStatus.finishedAt)}
-                    </Text>
-                    {syncStatus.errorSummary && (
-                      <Alert
-                        style={{ marginTop: 8 }}
-                        type="warning"
-                        message={syncStatus.errorSummary}
-                        showIcon
-                      />
-                    )}
+                  <div className="tool-actions">
+                    <Button htmlType="submit" type="primary" loading={loading}>
+                      绑定账号
+                    </Button>
+                    <Button onClick={logout}>退出登录</Button>
                   </div>
-                )}
-              </Card>
-            </Col>
+                </Form>
+                <div className="sync-status-line">
+                  最近同步：{syncStatus?.finishedAt ? formatSimpleDate(syncStatus.finishedAt) : "暂无"}
+                  <span className={`sync-status-tag sync-status-${syncStatus?.status?.toLowerCase() ?? "idle"}`}>
+                    {syncStatus?.status ?? "IDLE"}
+                  </span>
+                </div>
+              </div>
 
-            <Col xs={24} lg={12}>
-              <Card title="Data Source">
-                <Space wrap>
-                  <Tag color="blue">Official: {summary?.dataSource.official ?? 0}</Tag>
-                  <Tag color="gold">Corrected: {summary?.dataSource.corrected ?? 0}</Tag>
-                  <Tag color="purple">Manual-only: {summary?.dataSource["manual-only"] ?? 0}</Tag>
-                </Space>
-                <Divider />
-                <Row gutter={[8, 8]}>
-                  <Col span={12}>
-                    <Card size="small">
-                      <ReactECharts option={donutOption} style={{ height: 220 }} />
-                    </Card>
-                  </Col>
-                  <Col span={12}>
-                    <Card size="small">
-                      <ReactECharts option={rankingOption} style={{ height: 220 }} />
-                    </Card>
-                  </Col>
-                </Row>
-              </Card>
-            </Col>
-          </Row>
-
-          <Row gutter={[16, 16]} style={{ marginTop: 8 }}>
-            <Col xs={24} lg={14}>
-              <Card title="Games">
-                <Tabs
-                  activeKey={gameTab}
-                  onChange={(key) => {
-                    const nextTab = key as GameTab;
-                    setGameTab(nextTab);
-                    fetchAll(nextTab).catch(() => undefined);
-                  }}
-                  items={[
-                    { key: "owned", label: "Owned" },
-                    { key: "recent", label: "Recent Played" },
-                    { key: "top", label: "Top Playtime" }
-                  ]}
-                />
-                <List
-                  dataSource={games}
-                  renderItem={(game) => (
-                    <List.Item>
-                      <List.Item.Meta
-                        avatar={
-                          game.coverUrl ? (
-                            <img src={game.coverUrl} alt={game.title} className="game-cover" />
-                          ) : (
-                            <div className="game-placeholder">N</div>
-                          )
-                        }
-                        title={
-                          <Space>
-                            <span>{game.title}</span>
-                            {sourceTag(game.effectivePlaytime.source)}
-                          </Space>
-                        }
-                        description={
-                          <Space wrap>
-                            <Text type="secondary">
-                              Playtime: {formatMinutes(game.effectivePlaytime.totalMinutes)}
-                            </Text>
-                            <Text type="secondary">Owned: {formatDate(game.ownedAt)}</Text>
-                            <Text type="secondary">Last Played: {formatDate(game.lastPlayedAt)}</Text>
-                          </Space>
-                        }
-                      />
-                    </List.Item>
-                  )}
-                />
-              </Card>
-            </Col>
-
-            <Col xs={24} lg={10}>
-              <Card title="Manual Correction Ledger">
+              <div className="tool-card">
+                <div className="tool-card-head">
+                  <div>
+                    <h3>手动修正仪表盘</h3>
+                    <p>当官方时长缺失或地区不可见时，可用 SET_TOTAL / ADD_DELTA 进行补录。</p>
+                  </div>
+                </div>
                 <Form
                   layout="vertical"
                   form={correctionForm}
                   initialValues={{ type: "ADD_DELTA" as const, minutes: 30 }}
                   onFinish={submitCorrection}
                 >
-                  <Form.Item name="gameId" label="Game" rules={[{ required: true }]}>
-                    <Select placeholder="Select game" options={gameOptions} />
+                  <Form.Item name="gameId" label="选择游戏" rules={[{ required: true, message: "请选择游戏" }]}>
+                    <Select placeholder="选择要修正的游戏" options={gameOptions} />
                   </Form.Item>
-                  <Form.Item name="type" label="Correction Type" rules={[{ required: true }]}>
-                    <Select
-                      options={[
-                        { value: "SET_TOTAL", label: "SET_TOTAL" },
-                        { value: "ADD_DELTA", label: "ADD_DELTA" }
-                      ]}
-                    />
+                  <div className="correction-row">
+                    <Form.Item
+                      className="correction-row-item"
+                      name="type"
+                      label="修正类型"
+                      rules={[{ required: true, message: "请选择修正类型" }]}
+                    >
+                      <Select
+                        options={[
+                          { value: "SET_TOTAL", label: "SET_TOTAL 设定总时长" },
+                          { value: "ADD_DELTA", label: "ADD_DELTA 增减时长" }
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      className="correction-row-item"
+                      name="minutes"
+                      label="分钟数"
+                      rules={[{ required: true, message: "请输入分钟数" }]}
+                    >
+                      <InputNumber style={{ width: "100%" }} />
+                    </Form.Item>
+                  </div>
+                  <Form.Item name="reason" label="修正说明" rules={[{ required: true, min: 2, message: "请填写修正说明" }]}>
+                    <Input.TextArea rows={3} placeholder="例如：日服不可见，补录本周通勤时长" />
                   </Form.Item>
-                  <Form.Item name="minutes" label="Minutes" rules={[{ required: true }]}>
-                    <InputNumber style={{ width: "100%" }} />
-                  </Form.Item>
-                  <Form.Item name="reason" label="Reason" rules={[{ required: true, min: 2 }]}>
-                    <Input.TextArea rows={2} />
-                  </Form.Item>
-                  <Button type="primary" htmlType="submit">
-                    Submit Correction
+                  <Button htmlType="submit" type="primary" block>
+                    保存修正
                   </Button>
                 </Form>
 
-                <Divider />
-                <Table
-                  size="small"
-                  rowKey="id"
-                  columns={correctionColumns}
-                  dataSource={corrections}
-                  pagination={{ pageSize: 5 }}
-                  scroll={{ x: 760 }}
-                />
-              </Card>
-            </Col>
-          </Row>
-        </Spin>
-      </Content>
-    </Layout>
+                <div className="correction-list">
+                  {corrections.length > 0 ? (
+                    corrections.slice(0, 8).map((item) => (
+                      <div key={item.id} className="correction-item">
+                        <div className="correction-item-main">
+                          <div className="correction-type-tag">
+                            {item.type === "SET_TOTAL" ? "设定总时长" : "增减时长"}
+                          </div>
+                          <div className="correction-reason">{item.reason}</div>
+                          <div className="correction-meta">
+                            <span>{formatSimpleDate(item.createdAt)}</span>
+                            <span>{item.minutes} 分钟</span>
+                            <span>{item.revokedAt ? "已撤销" : "生效中"}</span>
+                          </div>
+                        </div>
+                        {!item.revokedAt && (
+                          <button
+                            type="button"
+                            className="link-danger"
+                            onClick={() => revokeCorrection(item.id)}
+                          >
+                            撤销
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-block">还没有修正记录，绑定账号后可以直接开始补录。</div>
+                  )}
+                </div>
+              </div>
+            </section>
+          </Spin>
+        </div>
+      </div>
+    </div>
   );
 }
