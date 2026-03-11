@@ -4,7 +4,7 @@ import {
   type PlaytimeCorrection
 } from "@nintendo-gametime/shared-types";
 import type { Repository } from "../repositories/types.js";
-import type { CatalogService } from "./catalogService.js";
+import type { CatalogGame, CatalogLocalizations, CatalogService } from "./catalogService.js";
 import { decodeCursor, encodeCursor } from "../utils/pagination.js";
 
 export type GamesTab = "owned" | "recent" | "top";
@@ -34,6 +34,7 @@ export interface ListedGame {
   priceAmount: number | null;
   priceCurrency: string;
   effectivePlaytime: EffectivePlaytime;
+  localizations: CatalogLocalizations;
 }
 
 export interface GameDetail extends ListedGame {
@@ -126,7 +127,8 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
 
   function mapListedGame(
     game: Awaited<ReturnType<Repository["listGamesByUserId"]>>[number],
-    effectiveMap: Record<string, EffectivePlaytime>
+    effectiveMap: Record<string, EffectivePlaytime>,
+    catalogGame?: CatalogGame | null
   ): ListedGame {
     return {
       id: game.id,
@@ -137,8 +139,17 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
       lastPlayedAt: game.lastPlayedAt,
       priceAmount: game.priceJpy,
       priceCurrency: "USD",
-      effectivePlaytime: effectiveMap[game.id]
+      effectivePlaytime: effectiveMap[game.id],
+      localizations: catalogGame?.localizations ?? {}
     };
+  }
+
+  async function buildCatalogMap(externalIds: string[]): Promise<Map<string, CatalogGame | null>> {
+    const uniqueExternalIds = [...new Set(externalIds)];
+    const entries = await Promise.all(
+      uniqueExternalIds.map(async (externalId) => [externalId, await catalogService.getCatalogGame(externalId)] as const)
+    );
+    return new Map(entries);
   }
 
   return {
@@ -227,7 +238,8 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
 
       const page = sorted.slice(offset, offset + limit);
       const nextOffset = offset + limit < sorted.length ? offset + limit : null;
-      const items = page.map((game) => mapListedGame(game, state.effectiveMap));
+      const catalogMap = await buildCatalogMap(page.map((game) => game.externalId));
+      const items = page.map((game) => mapListedGame(game, state.effectiveMap, catalogMap.get(game.externalId)));
       return {
         items,
         nextCursor: nextOffset === null ? null : encodeCursor(nextOffset)
@@ -247,7 +259,7 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
       ]);
 
       return {
-        ...mapListedGame(game, state.effectiveMap),
+        ...mapListedGame(game, state.effectiveMap, catalogGame),
         description: catalogGame?.description ?? null,
         publisher: catalogGame?.publisher ?? null,
         releaseDate: catalogGame?.releaseDate ?? null,

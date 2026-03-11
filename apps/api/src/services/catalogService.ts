@@ -1,6 +1,15 @@
 const DEFAULT_CURRENCY = "USD";
 const CACHE_TTL_MS = 1000 * 60 * 60;
 
+export interface CatalogTextLocalization {
+  title: string;
+  description: string | null;
+}
+
+export interface CatalogLocalizations {
+  zhHans?: CatalogTextLocalization;
+}
+
 export interface CatalogGame {
   externalId: string;
   title: string;
@@ -13,6 +22,7 @@ export interface CatalogGame {
   priceCurrency: string;
   platform: "Switch";
   region: "GLOBAL";
+  localizations: CatalogLocalizations;
 }
 
 export interface CatalogSeedEntry {
@@ -110,6 +120,93 @@ const CATALOG_SEEDS: CatalogSeedEntry[] = [
   }
 ];
 
+const CATALOG_LOCALIZATIONS: Record<string, CatalogLocalizations> = {
+  "the-legend-of-zelda-breath-of-the-wild-switch": {
+    zhHans: {
+      title: "萨尔达传说 旷野之息",
+      description:
+        "辽阔无垠的海拉鲁世界正等待你去探索。攀登高塔与山峰、挑战巨大敌人、狩猎与采集素材，在冒险中自由决定前进方式。"
+    }
+  },
+  "super-mario-odyssey-switch": {
+    zhHans: {
+      title: "超级马力欧 奥德赛",
+      description:
+        "乘上帽子船“奥德赛号”展开环球之旅。活用凯皮附身敌人、物件与动物，收集力量之月，阻止库巴的婚礼计划。"
+    }
+  },
+  "mario-kart-8-deluxe-switch": {
+    zhHans: {
+      title: "马力欧赛车8 豪华版",
+      description:
+        "收录《马力欧赛车8》的全部赛道、角色与车辆，并追加新角色和全新对战模式。无论本地还是线上，都能随时来一场热闹竞速。"
+    }
+  },
+  "luigis-mansion-3-switch": {
+    zhHans: {
+      title: "路易吉洋楼3",
+      description:
+        "在豪华饭店展开捉鬼冒险。利用升级后的鬼怪吸尘器G-00解决机关与谜题，还能和傀易吉一起探索每一层楼。"
+    }
+  },
+  "super-mario-3d-world-plus-bowsers-fury-switch": {
+    zhHans: {
+      title: "超级马力欧3D世界 + 狂怒世界",
+      description:
+        "体验最多四人同乐的《超级马力欧3D世界》，并在《狂怒世界》中面对巨大化的库巴，展开一场更加狂野的全新冒险。"
+    }
+  },
+  "animal-crossing-new-horizons-switch": {
+    zhHans: {
+      title: "集合啦！动物森友会",
+      description:
+        "搬到无人岛展开悠闲新生活，钓鱼、采集、布置家园，与动物居民一起打造只属于你的理想岛屿。"
+    }
+  },
+  "hollow-knight-switch": {
+    zhHans: {
+      title: "空洞骑士",
+      description:
+        "在错综复杂的地下王国展开史诗般的冒险。探索洞穴、古老城市与荒废废土，对抗被感染的生物，并结识神秘角色。"
+    }
+  },
+  "dead-cells-switch": {
+    zhHans: {
+      title: "死亡细胞",
+      description:
+        "将Roguevania与爽快动作结合的2D动作平台游戏。于不断变化的城堡中杀出血路，体验高速战斗与失败重来的成长循环。"
+    }
+  },
+  "kirby-and-the-forgotten-land-switch": {
+    zhHans: {
+      title: "星之卡比 探索发现",
+      description:
+        "为了拯救被卷走的瓦豆鲁迪，卡比来到文明与自然交织的新世界，运用复制能力和全新动作展开探索。"
+    }
+  },
+  "splatoon-3-switch": {
+    zhHans: {
+      title: "斯普拉遁3",
+      description:
+        "来到蛮颓地区展开4对4喷墨对战。全新武器、动作与单人模式回归，继续把地盘涂上自己的颜色。"
+    }
+  },
+  "metroid-dread-switch": {
+    zhHans: {
+      title: "密特罗德 生存恐惧",
+      description:
+        "在行星ZDR调查神秘讯号，萨姆斯将面对前所未有的威胁，以及步步逼近的EMMI机器人，突破恐惧继续前进。"
+    }
+  },
+  "pikmin-4-switch": {
+    zhHans: {
+      title: "皮克敏4",
+      description:
+        "派遣皮克敏和伙伴欧庆，在陌生星球上探索、搬运、战斗与解谜，寻找失踪队员，并想办法平安回家。"
+    }
+  }
+};
+
 interface CachedCatalogItem {
   expiresAt: number;
   value: CatalogGame;
@@ -139,7 +236,7 @@ function normalizeText(value: string): string {
   return value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ");
 }
 
@@ -225,7 +322,8 @@ function buildFallbackCatalogGame(seed: CatalogSeedEntry): CatalogGame {
     priceAmount: seed.fallbackPriceAmount,
     priceCurrency: DEFAULT_CURRENCY,
     platform: "Switch",
-    region: "GLOBAL"
+    region: "GLOBAL",
+    localizations: CATALOG_LOCALIZATIONS[seed.externalId] ?? {}
   };
 }
 
@@ -260,7 +358,8 @@ async function resolveCatalogGame(seed: CatalogSeedEntry): Promise<CatalogGame> 
       priceAmount: parsed.priceAmount ?? fallback.priceAmount,
       priceCurrency: parsed.priceCurrency ?? fallback.priceCurrency,
       platform: "Switch",
-      region: "GLOBAL"
+      region: "GLOBAL",
+      localizations: fallback.localizations
     };
   } catch {
     return fallback;
@@ -310,7 +409,10 @@ export function createCatalogService(): CatalogService {
       const limit = Math.min(Math.max(input?.limit ?? 12, 1), 24);
       const offset = decodeCursor(input?.cursor);
       const filteredSeeds = query
-        ? CATALOG_SEEDS.filter((seed) => normalizeText(`${seed.title} ${seed.externalId}`).includes(query))
+        ? CATALOG_SEEDS.filter((seed) => {
+            const zhHansTitle = CATALOG_LOCALIZATIONS[seed.externalId]?.zhHans?.title ?? "";
+            return normalizeText(`${seed.title} ${seed.externalId} ${zhHansTitle}`).includes(query);
+          })
         : CATALOG_SEEDS;
 
       const pageSeeds = filteredSeeds.slice(offset, offset + limit);

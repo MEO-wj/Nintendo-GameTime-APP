@@ -7,7 +7,8 @@ import type {
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
-  User
+  User,
+  UserPreference
 } from "../types/domain.js";
 
 export interface PaginationResult<T> {
@@ -20,6 +21,11 @@ export interface Repository {
   getUserById(userId: string): Promise<User | null>;
   saveAuthCode(email: string, code: string, expiresAt: string): Promise<void>;
   consumeAuthCode(email: string, code: string, now: string): Promise<boolean>;
+  getUserPreference(userId: string): Promise<UserPreference | null>;
+  upsertUserPreference(input: {
+    userId: string;
+    marketMode: "GLOBAL" | "DOMESTIC";
+  }): Promise<UserPreference>;
 
   upsertNintendoAccount(input: {
     userId: string;

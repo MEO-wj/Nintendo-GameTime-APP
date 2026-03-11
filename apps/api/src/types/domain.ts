@@ -6,6 +6,13 @@ export interface User {
   createdAt: string;
 }
 
+export interface UserPreference {
+  userId: string;
+  marketMode: "GLOBAL" | "DOMESTIC";
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AuthCode {
   id: string;
   email: string;

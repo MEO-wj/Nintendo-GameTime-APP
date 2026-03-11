@@ -4,6 +4,7 @@ import { createRepository, type RepositoryContext } from "./repositories/index.j
 import type { Repository } from "./repositories/types.js";
 import { ConsoleAlertService } from "./services/alertService.js";
 import { createCatalogService, type CatalogService } from "./services/catalogService.js";
+import { createMarketService, type MarketService } from "./services/marketService.js";
 import { createNintendoClient, type NintendoClient } from "./services/nintendoClient.js";
 import { createPlaytimeService, type PlaytimeService } from "./services/playtimeService.js";
 import { createSyncService, type SyncService } from "./services/syncService.js";
@@ -12,6 +13,7 @@ export interface AppDependencies {
   env: AppEnv;
   repository: Repository;
   catalogService: CatalogService;
+  marketService: MarketService;
   nintendoClient: NintendoClient;
   playtimeService: PlaytimeService;
   syncService: SyncService;
@@ -31,6 +33,7 @@ export async function createAppDependencies(
     : (repositoryContext = await createRepository(env)).repository;
 
   const catalogService = createCatalogService();
+  const marketService = createMarketService();
   const nintendoClient = createNintendoClient(env);
   const alertService = new ConsoleAlertService();
   const syncService = createSyncService({
@@ -45,6 +48,7 @@ export async function createAppDependencies(
     env,
     repository,
     catalogService,
+    marketService,
     nintendoClient,
     playtimeService,
     syncService,

@@ -5,6 +5,7 @@ import "./App.css";
 
 type CorrectionType = "SET_TOTAL" | "ADD_DELTA";
 type PlaytimeSource = "official" | "corrected" | "manual-only";
+type MarketMode = "GLOBAL" | "DOMESTIC";
 type View =
   | { page: "home" }
   | { page: "library" }
@@ -32,6 +33,15 @@ interface EffectivePlaytime {
   source: PlaytimeSource;
 }
 
+interface GameLocalization {
+  title: string;
+  description: string | null;
+}
+
+interface GameLocalizations {
+  zhHans?: GameLocalization;
+}
+
 interface OwnedGame {
   id: string;
   externalId: string;
@@ -42,6 +52,7 @@ interface OwnedGame {
   priceAmount: number | null;
   priceCurrency: string;
   effectivePlaytime: EffectivePlaytime;
+  localizations: GameLocalizations;
 }
 
 interface CorrectionItem {
@@ -76,6 +87,7 @@ interface CatalogItem {
   priceCurrency: string;
   platform: "Switch";
   region: "GLOBAL";
+  localizations: GameLocalizations;
   isOwned: boolean;
   ownedGameId: string | null;
   ownedAt: string | null;
@@ -101,6 +113,21 @@ interface SyncStatus {
   errorSummary: string | null;
 }
 
+interface DisplayPreference {
+  marketMode: MarketMode;
+}
+
+interface FxContext {
+  baseCurrency: "EUR";
+  source: string;
+  asOf: string;
+  rates: {
+    USD: number;
+    HKD: number;
+    CNY: number;
+  };
+}
+
 const FALLBACK_COVERS = [
   "https://images.igdb.com/igdb/image/upload/t_cover_big/co1r7h.jpg",
   "https://images.igdb.com/igdb/image/upload/t_cover_big/co1mxf.jpg",
@@ -109,6 +136,17 @@ const FALLBACK_COVERS = [
   "https://images.igdb.com/igdb/image/upload/t_cover_big/co5vmg.jpg",
   "https://images.igdb.com/igdb/image/upload/t_cover_big/co6j0z.jpg"
 ];
+
+const DEFAULT_FX_CONTEXT: FxContext = {
+  baseCurrency: "EUR",
+  source: "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+  asOf: "2026-03-11",
+  rates: {
+    USD: 1.1641,
+    HKD: 9.2904,
+    CNY: 8.0057
+  }
+};
 
 function parseStoredUser(): User | null {
   const token = getToken();
@@ -144,6 +182,43 @@ function formatDuration(minutes: number | null | undefined): string {
   return `${Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)}h`;
 }
 
+function convertCurrency(amount: number, fromCurrency: string, toCurrency: string, fxContext: FxContext | null): number | null {
+  if (fromCurrency === toCurrency) return amount;
+  if (!fxContext) return null;
+
+  const rates: Record<string, number> = {
+    EUR: 1,
+    ...fxContext.rates
+  };
+  const fromRate = rates[fromCurrency];
+  const toRate = rates[toCurrency];
+  if (!fromRate || !toRate) return null;
+  return (amount / fromRate) * toRate;
+}
+
+function formatDisplayCurrency(
+  amount: number | null,
+  currency: string,
+  marketMode: MarketMode,
+  fxContext: FxContext | null
+): string {
+  if (amount === null) return "价格待同步";
+
+  if (marketMode === "DOMESTIC") {
+    const convertedAmount = convertCurrency(amount, currency, "CNY", fxContext);
+    if (convertedAmount !== null) {
+      return new Intl.NumberFormat("zh-CN", {
+        style: "currency",
+        currency: "CNY",
+        minimumFractionDigits: convertedAmount % 1 === 0 ? 0 : 2,
+        maximumFractionDigits: 2
+      }).format(convertedAmount);
+    }
+  }
+
+  return formatCurrency(amount, currency);
+}
+
 function formatCurrency(amount: number | null, currency = "USD"): string {
   if (amount === null) return "价格待同步";
   return new Intl.NumberFormat("en-US", {
@@ -173,6 +248,26 @@ function formatSourceText(source: PlaytimeSource): string {
   if (source === "official") return "同步时长";
   if (source === "corrected") return "修正时长";
   return "手动时长";
+}
+
+function getDisplayTitle(
+  input: { title: string; localizations?: GameLocalizations | null },
+  marketMode: MarketMode
+): string {
+  if (marketMode === "DOMESTIC") {
+    return input.localizations?.zhHans?.title ?? input.title;
+  }
+  return input.title;
+}
+
+function getDisplayDescription(
+  input: { description: string | null; localizations?: GameLocalizations | null },
+  marketMode: MarketMode
+): string | null {
+  if (marketMode === "DOMESTIC") {
+    return input.localizations?.zhHans?.description ?? input.description;
+  }
+  return input.description;
 }
 
 function parseHash(): View {
@@ -233,11 +328,15 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [displayPreference, setDisplayPreference] = useState<DisplayPreference | null>({ marketMode: "DOMESTIC" });
+  const [fxContext, setFxContext] = useState<FxContext | null>(DEFAULT_FX_CONTEXT);
+  const [pendingMarketMode, setPendingMarketMode] = useState<MarketMode>("DOMESTIC");
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [authForm] = Form.useForm<{ email: string; code?: string }>();
   const [bindForm] = Form.useForm<{ sessionToken: string; region: "JP" | "GLOBAL" | "UNKNOWN" }>();
   const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string }>();
   const nickname = getNickname(user?.email);
+  const marketMode = displayPreference?.marketMode ?? "DOMESTIC";
   const heroCovers = useMemo(() => {
     const dynamic = [...ownedGames.map((item) => item.coverUrl), ...catalogItems.map((item) => item.coverUrl)].filter(
       (entry): entry is string => Boolean(entry)
@@ -267,6 +366,13 @@ export default function App() {
   async function fetchSyncStatus() {
     const response = await api.get<{ status: SyncStatus | null }>("/api/sync/status");
     setSyncStatus(response.data.status);
+  }
+
+  async function fetchDisplayPreferences() {
+    const response = await api.get<{ preference: DisplayPreference; fx: FxContext }>("/api/accounts/preferences");
+    setDisplayPreference(response.data.preference);
+    setFxContext(response.data.fx);
+    setPendingMarketMode(response.data.preference.marketMode);
   }
 
   async function fetchCatalogPage(input?: { query?: string; cursor?: string; append?: boolean }) {
@@ -328,6 +434,11 @@ export default function App() {
   }, [token, view]);
 
   useEffect(() => {
+    if (!token) return;
+    fetchDisplayPreferences().catch(() => undefined);
+  }, [token]);
+
+  useEffect(() => {
     setRemoveConfirmOpen(false);
   }, [view, gameDetail?.id]);
 
@@ -373,6 +484,22 @@ export default function App() {
       await loadCurrentView({ page: "account" });
     } catch (error) {
       message.error(getErrorMessage(error, "绑定账号失败"));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function saveDisplayPreference() {
+    try {
+      setActionLoading(true);
+      const response = await api.put<{ preference: DisplayPreference; fx: FxContext }>("/api/accounts/preferences", {
+        marketMode: pendingMarketMode
+      });
+      setDisplayPreference(response.data.preference);
+      setFxContext(response.data.fx);
+      message.success(pendingMarketMode === "DOMESTIC" ? "已切换到国内模式" : "已切换到海外模式");
+    } catch (error) {
+      message.error(getErrorMessage(error, "显示模式保存失败"));
     } finally {
       setActionLoading(false);
     }
@@ -467,6 +594,9 @@ export default function App() {
     setAccountInfo(null);
     setSyncStatus(null);
     setOtpDevCode(null);
+    setDisplayPreference({ marketMode: "DOMESTIC" });
+    setFxContext(DEFAULT_FX_CONTEXT);
+    setPendingMarketMode("DOMESTIC");
     navigate({ page: "home" });
   }
 
@@ -576,7 +706,7 @@ export default function App() {
                 <div className="stats-grid">
                   <div className="stat-card"><span>已拥有游戏</span><strong>{summary?.totalGames ?? 0}</strong></div>
                   <div className="stat-card"><span>累计时长</span><strong>{formatDuration(summary?.totalMinutes ?? 0)}</strong></div>
-                  <div className="stat-card"><span>目录总价</span><strong>{formatCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD")}</strong></div>
+                  <div className="stat-card"><span>目录总价</span><strong>{formatDisplayCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD", marketMode, fxContext)}</strong></div>
                   <div className="stat-card"><span>近 30 天</span><strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong></div>
                 </div>
                 <div className="row-actions">
@@ -605,7 +735,7 @@ export default function App() {
                     {ownedGames.map((game) => (
                       <CoverCard
                         key={game.id}
-                        title={game.title}
+                        title={getDisplayTitle(game, marketMode)}
                         coverUrl={game.coverUrl}
                         badge={formatDuration(game.effectivePlaytime.totalMinutes)}
                         meta={`${formatSimpleDate(game.ownedAt)} 入库`}
@@ -626,7 +756,7 @@ export default function App() {
                 <div className="panel-head">
                   <div><span className="eyebrow">我的游戏库</span><h2>已拥有的游戏</h2></div>
                   <div className="subtle-note">
-                    共 {summary?.totalGames ?? 0} 款，目录总价 {formatCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD")}
+                    共 {summary?.totalGames ?? 0} 款，目录总价 {formatDisplayCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD", marketMode, fxContext)}
                   </div>
                 </div>
                 {ownedGames.length > 0 ? (
@@ -634,7 +764,7 @@ export default function App() {
                     {ownedGames.map((game) => (
                       <CoverCard
                         key={game.id}
-                        title={game.title}
+                        title={getDisplayTitle(game, marketMode)}
                         coverUrl={game.coverUrl}
                         badge={formatDuration(game.effectivePlaytime.totalMinutes)}
                         meta={`${formatSourceText(game.effectivePlaytime.source)} / ${formatSimpleDate(game.lastPlayedAt)}`}
@@ -664,9 +794,9 @@ export default function App() {
                   {catalogItems.map((item) => (
                     <CoverCard
                       key={item.externalId}
-                      title={item.title}
+                      title={getDisplayTitle(item, marketMode)}
                       coverUrl={item.coverUrl}
-                      badge={formatCurrency(item.priceAmount, item.priceCurrency)}
+                      badge={formatDisplayCurrency(item.priceAmount, item.priceCurrency, marketMode, fxContext)}
                       meta={item.isOwned ? "已在我的游戏库" : "点击查看详情后入库"}
                       owned={item.isOwned}
                       onClick={() => navigate({ page: "catalog", externalId: item.externalId })}
@@ -694,14 +824,14 @@ export default function App() {
                 <div className="detail-cover" style={{ backgroundImage: `url(${catalogDetail.coverUrl ?? FALLBACK_COVERS[0]})` }} />
                 <div className="detail-copy">
                   <span className="eyebrow">目录详情</span>
-                  <h1>{catalogDetail.title}</h1>
+                  <h1>{getDisplayTitle(catalogDetail, marketMode)}</h1>
                   <div className="detail-meta-grid">
-                    <span>价格：{formatCurrency(catalogDetail.priceAmount, catalogDetail.priceCurrency)}</span>
+                    <span>价格：{formatDisplayCurrency(catalogDetail.priceAmount, catalogDetail.priceCurrency, marketMode, fxContext)}</span>
                     <span>平台：{catalogDetail.platform}</span>
                     <span>发行：{formatSimpleDate(catalogDetail.releaseDate)}</span>
                     <span>发行商：{catalogDetail.publisher ?? "待补充"}</span>
                   </div>
-                  <p>{catalogDetail.description ?? "该目录条目暂未拉到详情描述。你仍然可以先入库。"}</p>
+                  <p>{getDisplayDescription(catalogDetail, marketMode) ?? "该目录条目暂未拉到详情描述。你仍然可以先入库。"}</p>
                   <div className="row-actions">
                     {catalogDetail.ownedGame ? (
                       <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail.ownedGame!.id })}>查看我的记录</Button>
@@ -724,14 +854,14 @@ export default function App() {
                 </div>
                 <div className="detail-copy">
                   <span className="eyebrow">游戏详情</span>
-                  <h1>{gameDetail.title}</h1>
+                  <h1>{getDisplayTitle(gameDetail, marketMode)}</h1>
                   <div className="detail-meta-grid">
-                    <span>价格：{formatCurrency(gameDetail.priceAmount, gameDetail.priceCurrency)}</span>
+                    <span>价格：{formatDisplayCurrency(gameDetail.priceAmount, gameDetail.priceCurrency, marketMode, fxContext)}</span>
                     <span>已入库：{formatSimpleDate(gameDetail.ownedAt)}</span>
                     <span>最近游玩：{formatSimpleDate(gameDetail.lastPlayedAt)}</span>
                     <span>时长来源：{formatSourceText(gameDetail.effectivePlaytime.source)}</span>
                   </div>
-                  <p>{gameDetail.description ?? "当前没有同步到商店描述。你仍然可以在这里管理时长修正。"}</p>
+                  <p>{getDisplayDescription(gameDetail, marketMode) ?? "当前没有同步到商店描述。你仍然可以在这里管理时长修正。"}</p>
                   <div className="row-actions">
                     {gameDetail.storeUrl && <a className="link-button" href={gameDetail.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>}
                     <Popconfirm
@@ -820,6 +950,29 @@ export default function App() {
                   <div><span>失败次数</span><strong>{accountInfo?.syncFailCount ?? 0}</strong></div>
                 </div>
                 {syncStatus?.errorSummary && <Alert type="warning" showIcon message={`最近一次同步失败：${syncStatus.errorSummary}`} />}
+              </section>
+
+              <section className="panel">
+                <div className="panel-head"><div><span className="eyebrow">显示模式</span><h2>内容面向切换</h2></div></div>
+                <div className="status-list">
+                  <div><span>当前模式</span><strong>{marketMode === "DOMESTIC" ? "国内模式" : "海外模式"}</strong></div>
+                  <div><span>游戏名与介绍</span><strong>{marketMode === "DOMESTIC" ? "官方中文" : "英文原文"}</strong></div>
+                  <div><span>价格显示</span><strong>{marketMode === "DOMESTIC" ? "人民币换算" : "原始币种"}</strong></div>
+                  <div><span>汇率日期</span><strong>{fxContext?.asOf ?? "待同步"}</strong></div>
+                </div>
+                <div className="stack-list">
+                  <Select
+                    value={pendingMarketMode}
+                    onChange={(value) => setPendingMarketMode(value)}
+                    options={[
+                      { value: "DOMESTIC", label: "国内模式" },
+                      { value: "GLOBAL", label: "海外模式" }
+                    ]}
+                  />
+                  <Button type="primary" block onClick={saveDisplayPreference}>
+                    保存显示模式
+                  </Button>
+                </div>
               </section>
 
               <section className="panel">

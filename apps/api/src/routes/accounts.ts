@@ -9,6 +9,10 @@ const bindSchema = z.object({
   region: z.enum(["JP", "GLOBAL", "UNKNOWN"]).default("JP")
 });
 
+const preferenceSchema = z.object({
+  marketMode: z.enum(["GLOBAL", "DOMESTIC"])
+});
+
 export function createAccountsRouter(deps: AppDependencies): Router {
   const router = new Router();
   const requireAuth = createAuthMiddleware(deps.env);
@@ -29,6 +33,53 @@ export function createAccountsRouter(deps: AppDependencies): Router {
         lastSyncAt: account.lastSyncAt,
         syncFailCount: account.syncFailCount
       }
+    };
+  });
+
+  router.get("/api/accounts/preferences", requireAuth, async (ctx) => {
+    const authUser = requireAuthUser(ctx.state);
+    const [preference, fx] = await Promise.all([
+      deps.repository.getUserPreference(authUser.userId),
+      deps.marketService.getFxContext()
+    ]);
+
+    ctx.body = {
+      preference: {
+        marketMode: preference?.marketMode ?? "DOMESTIC"
+      },
+      fx
+    };
+  });
+
+  router.put("/api/accounts/preferences", requireAuth, async (ctx) => {
+    const parsed = preferenceSchema.safeParse(ctx.request.body);
+    if (!parsed.success) {
+      ctx.status = 400;
+      ctx.body = { message: "Invalid payload", issues: parsed.error.flatten() };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    const preference = await deps.repository.upsertUserPreference({
+      userId: authUser.userId,
+      marketMode: parsed.data.marketMode
+    });
+
+    await deps.repository.insertAuditLog({
+      userId: authUser.userId,
+      action: "user_preference_updated",
+      details: {
+        marketMode: parsed.data.marketMode
+      },
+      createdAt: new Date().toISOString()
+    });
+
+    const fx = await deps.marketService.getFxContext();
+    ctx.body = {
+      preference: {
+        marketMode: preference.marketMode
+      },
+      fx
     };
   });
 

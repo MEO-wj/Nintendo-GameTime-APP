@@ -9,12 +9,14 @@ import type {
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
-  User
+  User,
+  UserPreference
 } from "../types/domain.js";
 
 export class MemoryRepository implements Repository {
   private users = new Map<string, User>();
   private usersByEmail = new Map<string, User>();
+  private userPreferences = new Map<string, UserPreference>();
   private authCodes = new Map<string, AuthCode>();
   private nintendoAccounts = new Map<string, NintendoAccount>();
   private games = new Map<string, GameRow>();
@@ -39,6 +41,33 @@ export class MemoryRepository implements Repository {
 
   async getUserById(userId: string): Promise<User | null> {
     return this.users.get(userId) ?? null;
+  }
+
+  async getUserPreference(userId: string): Promise<UserPreference | null> {
+    return this.userPreferences.get(userId) ?? null;
+  }
+
+  async upsertUserPreference(input: {
+    userId: string;
+    marketMode: "GLOBAL" | "DOMESTIC";
+  }): Promise<UserPreference> {
+    const now = new Date().toISOString();
+    const existing = this.userPreferences.get(input.userId);
+    if (existing) {
+      existing.marketMode = input.marketMode;
+      existing.updatedAt = now;
+      this.userPreferences.set(input.userId, existing);
+      return existing;
+    }
+
+    const row: UserPreference = {
+      userId: input.userId,
+      marketMode: input.marketMode,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.userPreferences.set(input.userId, row);
+    return row;
   }
 
   async saveAuthCode(email: string, code: string, expiresAt: string): Promise<void> {

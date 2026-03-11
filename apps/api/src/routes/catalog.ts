@@ -93,7 +93,8 @@ export function createCatalogRouter(deps: AppDependencies): Router {
             lastPlayedAt: ownedGame.lastPlayedAt,
             priceAmount: ownedGame.priceJpy,
             priceCurrency: "USD",
-            effectivePlaytime
+            effectivePlaytime,
+            localizations: catalogGame.localizations
           }
         : null,
       corrections

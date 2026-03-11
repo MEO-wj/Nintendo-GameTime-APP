@@ -9,7 +9,8 @@ import type {
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
-  User
+  User,
+  UserPreference
 } from "../types/domain.js";
 
 function asIso(value: string | Date): string {
@@ -33,6 +34,12 @@ export class PostgresRepository implements Repository {
         expires_at TIMESTAMPTZ NOT NULL,
         consumed_at TIMESTAMPTZ NULL,
         created_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        user_id TEXT PRIMARY KEY REFERENCES users(id),
+        market_mode TEXT NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
       );
       CREATE TABLE IF NOT EXISTS nintendo_accounts (
         id TEXT PRIMARY KEY,
@@ -132,6 +139,56 @@ export class PostgresRepository implements Repository {
     const row = result.rows[0];
     if (!row) return null;
     return { id: row.id, email: row.email, createdAt: asIso(row.created_at) };
+  }
+
+  async getUserPreference(userId: string): Promise<UserPreference | null> {
+    const result = await this.pool.query(
+      `SELECT user_id, market_mode, created_at, updated_at
+       FROM user_preferences
+       WHERE user_id = $1`,
+      [userId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      userId: row.user_id,
+      marketMode: row.market_mode,
+      createdAt: asIso(row.created_at),
+      updatedAt: asIso(row.updated_at)
+    };
+  }
+
+  async upsertUserPreference(input: {
+    userId: string;
+    marketMode: "GLOBAL" | "DOMESTIC";
+  }): Promise<UserPreference> {
+    const existing = await this.pool.query(
+      "SELECT user_id, created_at FROM user_preferences WHERE user_id = $1",
+      [input.userId]
+    );
+    const now = new Date().toISOString();
+
+    if (existing.rows[0]) {
+      await this.pool.query(
+        `UPDATE user_preferences
+         SET market_mode = $1, updated_at = $2
+         WHERE user_id = $3`,
+        [input.marketMode, now, input.userId]
+      );
+    } else {
+      await this.pool.query(
+        `INSERT INTO user_preferences (user_id, market_mode, created_at, updated_at)
+         VALUES ($1, $2, $3, $3)`,
+        [input.userId, input.marketMode, now]
+      );
+    }
+
+    return {
+      userId: input.userId,
+      marketMode: input.marketMode,
+      createdAt: existing.rows[0] ? asIso(existing.rows[0].created_at) : now,
+      updatedAt: now
+    };
   }
 
   async saveAuthCode(email: string, code: string, expiresAt: string): Promise<void> {
