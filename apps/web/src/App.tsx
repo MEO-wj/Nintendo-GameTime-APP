@@ -148,6 +148,15 @@ const DEFAULT_FX_CONTEXT: FxContext = {
   }
 };
 
+const PLAYTIME_PALETTE = [
+  "#d05b3b",
+  "#d49d32",
+  "#3d8c7d",
+  "#3b6fd0",
+  "#8753c7",
+  "#c0508f"
+];
+
 function parseStoredUser(): User | null {
   const token = getToken();
   if (!token) return null;
@@ -270,6 +279,10 @@ function getDisplayDescription(
   return input.description;
 }
 
+function getPlaytimeColor(index: number): string {
+  return PLAYTIME_PALETTE[index % PLAYTIME_PALETTE.length];
+}
+
 function parseHash(): View {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const parts = raw.split("/").filter(Boolean);
@@ -343,6 +356,37 @@ export default function App() {
     );
     return [...dynamic, ...FALLBACK_COVERS].slice(0, 6);
   }, [catalogItems, ownedGames]);
+  const featuredOwnedGames = useMemo(() => ownedGames.slice(0, 6), [ownedGames]);
+  const dashboardGames = useMemo(
+    () =>
+      [...ownedGames]
+        .sort((left, right) => right.effectivePlaytime.totalMinutes - left.effectivePlaytime.totalMinutes)
+        .slice(0, 5),
+    [ownedGames]
+  );
+  const dashboardTotalMinutes = useMemo(
+    () => dashboardGames.reduce((sum, game) => sum + game.effectivePlaytime.totalMinutes, 0),
+    [dashboardGames]
+  );
+  const dashboardMaxMinutes = useMemo(
+    () => dashboardGames.reduce((max, game) => Math.max(max, game.effectivePlaytime.totalMinutes), 0),
+    [dashboardGames]
+  );
+  const dashboardRing = useMemo(() => {
+    if (dashboardTotalMinutes <= 0 || dashboardGames.length === 0) {
+      return "conic-gradient(rgba(49, 36, 22, 0.1) 0% 100%)";
+    }
+
+    let start = 0;
+    const segments = dashboardGames.map((game, index) => {
+      const share = game.effectivePlaytime.totalMinutes / dashboardTotalMinutes;
+      const end = index === dashboardGames.length - 1 ? 100 : start + share * 100;
+      const segment = `${getPlaytimeColor(index)} ${start}% ${end}%`;
+      start = end;
+      return segment;
+    });
+    return `conic-gradient(${segments.join(", ")})`;
+  }, [dashboardGames, dashboardTotalMinutes]);
 
   function navigate(nextView: View) {
     const hash = toHash(nextView);
@@ -388,7 +432,7 @@ export default function App() {
     setErrorText(null);
     try {
       if (nextView.page === "home") {
-        await Promise.all([fetchSummary(), fetchOwnedGames(8), fetchSyncStatus()]);
+        await Promise.all([fetchSummary(), fetchOwnedGames(18)]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "library") {
@@ -675,21 +719,14 @@ export default function App() {
           >
             游戏库
           </button>
-          <button
-            type="button"
-            className={view.page === "account" ? "topnav-active" : ""}
-            onClick={() => navigate({ page: "account" })}
-          >
-            账号同步
-          </button>
         </nav>
 
         <div className="account-block">
           <div className="account-meta">
             <strong>{nickname}</strong>
-            <span>{formatRelativeTime(summary?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}</span>
+            <span>{formatRelativeTime(summary?.lastSyncAt ?? accountInfo?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}</span>
           </div>
-          <Button onClick={() => navigate({ page: "account" })}>绑定账号</Button>
+          <Button onClick={() => navigate({ page: "account" })}>个人中心</Button>
           <Button onClick={logout}>退出</Button>
         </div>
       </header>
@@ -711,11 +748,10 @@ export default function App() {
                 </div>
                 <div className="row-actions">
                   <Button type="primary" onClick={() => navigate({ page: "library" })}>浏览游戏目录</Button>
-                  <Button onClick={() => navigate({ page: "account" })}>前往账号同步</Button>
                 </div>
               </section>
 
-              <section className="panel">
+              <section className="panel home-sync-panel">
                 <div className="panel-head"><h2>同步状态</h2><Button onClick={runSync}>立即同步</Button></div>
                 <div className="status-list">
                   <div><span>最近同步</span><strong>{formatSimpleDate(syncStatus?.finishedAt ?? summary?.lastSyncAt ?? null)}</strong></div>
@@ -728,11 +764,86 @@ export default function App() {
                 {syncStatus?.errorSummary && <Alert type="warning" showIcon message={`最近一次同步异常：${syncStatus.errorSummary}`} />}
               </section>
 
+              <section className="panel panel-wide dashboard-panel">
+                <div className="panel-head">
+                  <div>
+                    <span className="eyebrow">时长仪表盘</span>
+                    <h2>按游戏查看时长分布</h2>
+                  </div>
+                  <div className="subtle-note">不同颜色对应不同游戏，点击条目可直接进入详情页。</div>
+                </div>
+                {dashboardGames.length > 0 ? (
+                  <div className="dashboard-layout">
+                    <div className="dashboard-ring-wrap">
+                      <div className="dashboard-ring" style={{ background: dashboardRing }}>
+                        <div className="dashboard-ring-core">
+                          <span>累计时长</span>
+                          <strong>{formatDuration(dashboardTotalMinutes)}</strong>
+                          <em>当前展示 {dashboardGames.length} 款</em>
+                        </div>
+                      </div>
+                      <div className="dashboard-mini-grid">
+                        <div className="dashboard-mini-card">
+                          <span>近 30 天</span>
+                          <strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong>
+                        </div>
+                        <div className="dashboard-mini-card">
+                          <span>最近同步</span>
+                          <strong>{formatSimpleDate(summary?.lastSyncAt ?? null)}</strong>
+                        </div>
+                        <div className="dashboard-mini-card">
+                          <span>官方来源</span>
+                          <strong>{summary?.dataSource.official ?? 0}</strong>
+                        </div>
+                        <div className="dashboard-mini-card">
+                          <span>修正 / 手动</span>
+                          <strong>{(summary?.dataSource.corrected ?? 0) + (summary?.dataSource["manual-only"] ?? 0)}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="dashboard-list">
+                      {dashboardGames.map((game, index) => {
+                        const minutes = game.effectivePlaytime.totalMinutes;
+                        const share = dashboardTotalMinutes > 0 ? Math.round((minutes / dashboardTotalMinutes) * 100) : 0;
+                        const width = dashboardMaxMinutes > 0 ? (minutes / dashboardMaxMinutes) * 100 : 0;
+                        const color = getPlaytimeColor(index);
+                        return (
+                          <button
+                            key={game.id}
+                            type="button"
+                            className="dashboard-row"
+                            onClick={() => navigate({ page: "game", gameId: game.id })}
+                          >
+                            <div className="dashboard-row-head">
+                              <span className="dashboard-swatch" style={{ backgroundColor: color }} />
+                              <strong>{getDisplayTitle(game, marketMode)}</strong>
+                              <span>{formatDuration(minutes)} / {share}%</span>
+                            </div>
+                            <div className="dashboard-bar-track">
+                              <div
+                                className="dashboard-bar-fill"
+                                style={{
+                                  width: `${width}%`,
+                                  background: `linear-gradient(90deg, ${color}, ${color}cc)`
+                                }}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="empty-block">游戏入库后，这里会用彩色仪表盘展示每款游戏的时长占比。</div>
+                )}
+              </section>
+
               <section className="panel panel-wide">
                 <div className="panel-head"><h2>我的收藏</h2><Button onClick={() => navigate({ page: "library" })}>查看完整游戏库</Button></div>
-                {ownedGames.length > 0 ? (
+                {featuredOwnedGames.length > 0 ? (
                   <div className="card-grid">
-                    {ownedGames.map((game) => (
+                    {featuredOwnedGames.map((game) => (
                       <CoverCard
                         key={game.id}
                         title={getDisplayTitle(game, marketMode)}
@@ -942,7 +1053,7 @@ export default function App() {
           {view.page === "account" && (
             <div className="page-grid">
               <section className="panel">
-                <div className="panel-head"><div><span className="eyebrow">账号同步</span><h2>绑定 Nintendo 账号</h2></div><Button onClick={runSync}>立即同步</Button></div>
+                <div className="panel-head"><div><span className="eyebrow">账号同步</span><h2>绑定 Nintendo 账号</h2></div><Button type="primary" onClick={runSync}>立即同步</Button></div>
                 <div className="status-list">
                   <div><span>绑定状态</span><strong>{accountInfo ? "已绑定" : "未绑定"}</strong></div>
                   <div><span>区域</span><strong>{accountInfo?.region ?? "未知"}</strong></div>
