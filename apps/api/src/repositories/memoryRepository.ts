@@ -132,7 +132,7 @@ export class MemoryRepository implements Repository {
   }): Promise<GameRow> {
     const now = new Date().toISOString();
     const existing = [...this.games.values()].find(
-      (entry) => entry.userId === input.userId && entry.externalId === input.externalId && !entry.deletedAt
+      (entry) => entry.userId === input.userId && entry.externalId === input.externalId
     );
     if (existing) {
       existing.title = input.title;
@@ -143,6 +143,7 @@ export class MemoryRepository implements Repository {
       existing.ownedAt = input.ownedAt;
       existing.lastPlayedAt = input.lastPlayedAt;
       existing.updatedAt = now;
+      existing.deletedAt = null;
       this.games.set(existing.id, existing);
       return existing;
     }
@@ -182,6 +183,15 @@ export class MemoryRepository implements Repository {
     const items = sorted.slice(input.offset, input.offset + input.limit);
     const nextOffset = input.offset + input.limit < sorted.length ? input.offset + input.limit : null;
     return { items, nextOffset };
+  }
+
+  async removeGame(userId: string, gameId: string, deletedAt: string): Promise<GameRow | null> {
+    const row = this.games.get(gameId);
+    if (!row || row.userId !== userId || row.deletedAt) return null;
+    row.deletedAt = deletedAt;
+    row.updatedAt = deletedAt;
+    this.games.set(row.id, row);
+    return row;
   }
 
   async insertOfficialSnapshot(input: {

@@ -269,6 +269,11 @@ body {
   left: 0.85rem;
   background: rgba(36, 24, 18, 0.82);
   color: #fff;
+  min-width: 3.25rem;
+  text-align: center;
+  letter-spacing: 0.02em;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 .cover-card-owned {
@@ -390,6 +395,77 @@ body {
   border: 1px solid var(--line);
   color: var(--ink);
   background: rgba(255, 255, 255, 0.8);
+}
+
+.remove-trigger-active {
+  color: #fff !important;
+  border-color: transparent !important;
+  background: linear-gradient(160deg, #d05b3b, #a43d20) !important;
+  box-shadow: 0 12px 24px rgba(164, 61, 32, 0.24);
+}
+
+.game-remove-popconfirm .ant-popover-inner {
+  min-width: 320px;
+  padding: 1rem 1rem 0.95rem;
+  border: 1px solid rgba(178, 74, 40, 0.18);
+  border-radius: 1.2rem;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.95), transparent 34%),
+    rgba(255, 248, 241, 0.96);
+  box-shadow: 0 22px 48px rgba(57, 35, 16, 0.18);
+  backdrop-filter: blur(18px);
+}
+
+.game-remove-popconfirm .ant-popover-arrow::before,
+.game-remove-popconfirm .ant-popover-arrow::after {
+  background: rgba(255, 248, 241, 0.96) !important;
+}
+
+.game-remove-popconfirm .ant-popconfirm-message {
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.game-remove-popconfirm .ant-popconfirm-message-icon {
+  margin-top: 0.15rem;
+  color: var(--accent);
+}
+
+.game-remove-popconfirm .ant-popconfirm-title {
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.98rem;
+}
+
+.game-remove-popconfirm .ant-popconfirm-description {
+  margin-top: 0.3rem;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.game-remove-popconfirm .ant-popconfirm-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.95rem;
+}
+
+.game-remove-popconfirm .ant-btn {
+  min-width: 88px;
+  height: 2.5rem;
+  border-radius: 999px;
+}
+
+.game-remove-popconfirm-cancel {
+  border-color: rgba(49, 36, 22, 0.12) !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  color: var(--ink) !important;
+}
+
+.game-remove-popconfirm-ok {
+  border-color: transparent !important;
+  background: linear-gradient(160deg, #d05b3b, #a43d20) !important;
+  box-shadow: 0 12px 24px rgba(164, 61, 32, 0.22);
 }
 
 @media (max-width: 1024px) {

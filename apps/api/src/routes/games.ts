@@ -75,5 +75,28 @@ export function createGamesRouter(deps: AppDependencies): Router {
     ctx.body = detail;
   });
 
+  router.delete("/api/games/:id", requireAuth, async (ctx) => {
+    const parsed = gameParamsSchema.safeParse(ctx.params);
+    if (!parsed.success) {
+      ctx.status = 400;
+      ctx.body = { message: "Invalid params", issues: parsed.error.flatten() };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    const removed = await deps.playtimeService.removeGameFromLibrary({
+      userId: authUser.userId,
+      gameId: parsed.data.id
+    });
+
+    if (!removed) {
+      ctx.status = 404;
+      ctx.body = { message: "Game not found" };
+      return;
+    }
+
+    ctx.status = 204;
+  });
+
   return router;
 }

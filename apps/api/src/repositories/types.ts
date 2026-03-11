@@ -44,6 +44,7 @@ export interface Repository {
   getGameById(userId: string, gameId: string): Promise<GameRow | null>;
   listGamesByUserId(userId: string): Promise<GameRow[]>;
   listGamesPaginatedByUserId(userId: string, input: { offset: number; limit: number }): Promise<PaginationResult<GameRow>>;
+  removeGame(userId: string, gameId: string, deletedAt: string): Promise<GameRow | null>;
 
   insertOfficialSnapshot(input: {
     userId: string;

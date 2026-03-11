@@ -57,6 +57,7 @@ export interface PlaytimeService {
   }): Promise<{ items: ListedGame[]; nextCursor: string | null }>;
   getGameDetail(userId: string, gameId: string): Promise<GameDetail | null>;
   addGameToLibrary(input: { userId: string; externalId: string }): Promise<GameDetail>;
+  removeGameFromLibrary(input: { userId: string; gameId: string }): Promise<boolean>;
   listCorrections(userId: string, gameId?: string): Promise<PlaytimeCorrection[]>;
   createCorrection(input: {
     userId: string;
@@ -300,6 +301,24 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
         throw new Error("Game detail unavailable");
       }
       return detail;
+    },
+
+    async removeGameFromLibrary(input: { userId: string; gameId: string }) {
+      const deletedAt = new Date().toISOString();
+      const removed = await repository.removeGame(input.userId, input.gameId, deletedAt);
+      if (!removed) return false;
+
+      await repository.insertAuditLog({
+        userId: input.userId,
+        action: "game_removed_from_library",
+        details: {
+          gameId: removed.id,
+          externalId: removed.externalId
+        },
+        createdAt: deletedAt
+      });
+
+      return true;
     },
 
     async listCorrections(userId: string, gameId?: string) {

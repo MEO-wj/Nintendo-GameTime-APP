@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Form, Input, InputNumber, Select, Spin, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Popconfirm, Select, Spin, message } from "antd";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
 
@@ -137,9 +137,10 @@ function getNickname(email?: string | null): string {
   return email.split("@")[0] || "玩家";
 }
 
-function formatDuration(minutes: number): string {
-  if (!Number.isFinite(minutes) || minutes <= 0) return "0h";
-  const hours = Math.round((minutes / 60) * 10) / 10;
+function formatDuration(minutes: number | null | undefined): string {
+  const normalizedMinutes = typeof minutes === "number" ? minutes : Number(minutes ?? 0);
+  if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) return "0h";
+  const hours = Math.round((normalizedMinutes / 60) * 10) / 10;
   return `${Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)}h`;
 }
 
@@ -232,6 +233,7 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [catalogQuery, setCatalogQuery] = useState("");
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [authForm] = Form.useForm<{ email: string; code?: string }>();
   const [bindForm] = Form.useForm<{ sessionToken: string; region: "JP" | "GLOBAL" | "UNKNOWN" }>();
   const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string }>();
@@ -325,6 +327,10 @@ export default function App() {
     loadCurrentView(view).catch(() => undefined);
   }, [token, view]);
 
+  useEffect(() => {
+    setRemoveConfirmOpen(false);
+  }, [view, gameDetail?.id]);
+
   async function requestOtp() {
     try {
       setActionLoading(true);
@@ -395,6 +401,22 @@ export default function App() {
       navigate({ page: "game", gameId: response.data.id });
     } catch (error) {
       message.error(getErrorMessage(error, "入库失败"));
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function removeFromLibrary(gameId: string) {
+    try {
+      setActionLoading(true);
+      await api.delete(`/api/games/${gameId}`);
+      setRemoveConfirmOpen(false);
+      setGameDetail(null);
+      await Promise.all([fetchOwnedGames(), fetchSummary()]);
+      message.success("已从我的游戏库移出");
+      navigate({ page: "library" });
+    } catch (error) {
+      message.error(getErrorMessage(error, "移出游戏库失败"));
     } finally {
       setActionLoading(false);
     }
@@ -712,6 +734,22 @@ export default function App() {
                   <p>{gameDetail.description ?? "当前没有同步到商店描述。你仍然可以在这里管理时长修正。"}</p>
                   <div className="row-actions">
                     {gameDetail.storeUrl && <a className="link-button" href={gameDetail.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>}
+                    <Popconfirm
+                      placement="bottomLeft"
+                      overlayClassName="game-remove-popconfirm"
+                      onOpenChange={setRemoveConfirmOpen}
+                      title="移出我的游戏库？"
+                      description="移出后会从当前游戏库消失；如果后续账号同步再次识别到它，仍可能重新加入。"
+                      okText="确认移出"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true, className: "game-remove-popconfirm-ok" }}
+                      cancelButtonProps={{ className: "game-remove-popconfirm-cancel" }}
+                      onConfirm={() => removeFromLibrary(gameDetail.id)}
+                    >
+                      <Button danger className={removeConfirmOpen ? "remove-trigger-active" : undefined}>
+                        {removeConfirmOpen ? "确认移出" : "移出游戏库"}
+                      </Button>
+                    </Popconfirm>
                     <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
                   </div>
                 </div>

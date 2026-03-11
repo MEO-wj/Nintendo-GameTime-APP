@@ -420,6 +420,33 @@ export class PostgresRepository implements Repository {
     return { items, nextOffset };
   }
 
+  async removeGame(userId: string, gameId: string, deletedAt: string): Promise<GameRow | null> {
+    const result = await this.pool.query(
+      `UPDATE games
+       SET deleted_at = $1, updated_at = $1
+       WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL
+       RETURNING id, user_id, external_id, title, cover_url, region, platform, price_jpy, owned_at, last_played_at, created_at, updated_at, deleted_at`,
+      [deletedAt, gameId, userId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      externalId: row.external_id,
+      title: row.title,
+      coverUrl: row.cover_url,
+      region: row.region,
+      platform: row.platform,
+      priceJpy: row.price_jpy === null ? null : Number(row.price_jpy),
+      ownedAt: row.owned_at ? asIso(row.owned_at) : null,
+      lastPlayedAt: row.last_played_at ? asIso(row.last_played_at) : null,
+      createdAt: asIso(row.created_at),
+      updatedAt: asIso(row.updated_at),
+      deletedAt: row.deleted_at ? asIso(row.deleted_at) : null
+    };
+  }
+
   async insertOfficialSnapshot(input: {
     userId: string;
     gameId: string;
