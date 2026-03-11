@@ -1,6 +1,49 @@
-[31merror when starting dev server:
-Error: Port 5173 is already in use
-    at Server.onError$1 (file:///D:/Github%20file/Nintendo%20GameTime%20APP/node_modules/.pnpm/vite@7.3.1_@types+node@24.12.0_tsx@4.21.0/node_modules/vite/dist/node/chunks/config.js:14933:28)
-    at Server.emit (node:events:508:28)
-    at emitErrorNT (node:net:1976:8)
-    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)[39m
+[2m02:41:34[22m [31m[1m[vite][22m[39m [31mInternal server error: D:\Github file\Nintendo GameTime APP\apps\web\src\App.tsx: Missing semicolon. (377:49)
+
+[0m [90m 375 |[31m [32m    try {[31m
+ [90m 376 |[31m [32m      setLoading(true);[31m
+[31m[1m>[22m[31m[90m 377 |[31m [32m      await api.post(`[31m[33m/[31mapi[33m/[31mplaytime[33m/[31mcorrections[33m/[31m${correctionId}[33m/[31mrevoke[32m`);[31m
+ [90m     |[31m                                                  [31m[1m^[22m[31m
+ [90m 378 |[31m [32m      message.success("修正已撤销");[31m
+ [90m 379 |[31m [32m      await fetchAll();[31m
+ [90m 380 |[31m [32m    } catch (error) {[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mD:/Github file/Nintendo GameTime APP/apps/web/src/App.tsx[39m:377:49
+[33m  375 |      try {
+  376 |        setLoading(true);
+  377 |        await api.post(`/api/playtime/corrections/${correctionId}/revoke`);
+      |                                                   ^
+  378 |        message.success("修正已撤销");
+  379 |        await fetchAll();[39m
+      at constructor (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:365:19)
+      at TypeScriptParserMixin.raise (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:6599:19)
+      at TypeScriptParserMixin.semicolon (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:6895:10)
+      at TypeScriptParserMixin.parseExpressionStatement (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:13285:10)
+      at TypeScriptParserMixin.parseStatementContent (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:12899:19)
+      at TypeScriptParserMixin.parseStatementContent (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:9508:18)
+      at TypeScriptParserMixin.parseStatementLike (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:12767:17)
+      at TypeScriptParserMixin.parseModuleItem (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:12744:17)
+      at TypeScriptParserMixin.parseBlockOrModuleBlockBody (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:13316:36)
+      at TypeScriptParserMixin.parseBlockBody (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:13309:10)
+      at TypeScriptParserMixin.parseProgram (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:12622:10)
+      at TypeScriptParserMixin.parseTopLevel (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:12612:25)
+      at TypeScriptParserMixin.parse (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:14488:25)
+      at TypeScriptParserMixin.parse (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:10126:18)
+      at parse (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+parser@7.29.0\node_modules\@babel\parser\lib\index.js:14522:38)
+      at parser (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+core@7.29.0\node_modules\@babel\core\lib\parser\index.js:41:34)
+      at parser.next (<anonymous>)
+      at normalizeFile (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+core@7.29.0\node_modules\@babel\core\lib\transformation\normalize-file.js:64:37)
+      at normalizeFile.next (<anonymous>)
+      at run (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+core@7.29.0\node_modules\@babel\core\lib\transformation\index.js:22:50)
+      at run.next (<anonymous>)
+      at transform (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+core@7.29.0\node_modules\@babel\core\lib\transform.js:22:33)
+      at transform.next (<anonymous>)
+      at step (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:261:32)
+      at D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:223:11)
+      at D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:189:28
+      at D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\@babel+core@7.29.0\node_modules\@babel\core\lib\gensync-utils\async.js:67:7
+      at D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:113:33
+      at step (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:287:14)
+      at D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:273:13
+      at async.call.result.err.err (D:\Github file\Nintendo GameTime APP\node_modules\.pnpm\gensync@1.0.0-beta.2\node_modules\gensync\index.js:223:11)
