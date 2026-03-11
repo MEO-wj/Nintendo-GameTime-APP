@@ -6,12 +6,17 @@ import { createAuthMiddleware, requireAuthUser } from "../middleware/auth.js";
 const listQuerySchema = z.object({
   q: z.string().optional(),
   cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(24).default(12)
+  limit: z.coerce.number().int().min(1).max(100).default(12)
 });
 
 const detailParamsSchema = z.object({
   externalId: z.string().min(1)
 });
+
+function isInternalRequest(ctx: Router.RouterContext, internalToken: string): boolean {
+  const token = ctx.headers["x-internal-token"];
+  return typeof token === "string" && token === internalToken;
+}
 
 export function createCatalogRouter(deps: AppDependencies): Router {
   const router = new Router();
@@ -49,7 +54,8 @@ export function createCatalogRouter(deps: AppDependencies): Router {
           ownedAt: owned?.ownedAt ?? null
         };
       }),
-      nextCursor: catalog.nextCursor
+      nextCursor: catalog.nextCursor,
+      totalCount: catalog.totalCount
     };
   });
 
@@ -99,6 +105,22 @@ export function createCatalogRouter(deps: AppDependencies): Router {
         : null,
       corrections
     };
+  });
+
+  router.get("/api/catalog/status", requireAuth, async (ctx) => {
+    const status = await deps.catalogService.getCatalogStatus();
+    ctx.body = { status };
+  });
+
+  router.post("/api/internal/catalog/refresh", async (ctx) => {
+    if (!isInternalRequest(ctx, deps.env.INTERNAL_SYNC_TOKEN)) {
+      ctx.status = 401;
+      ctx.body = { message: "Unauthorized internal call" };
+      return;
+    }
+
+    const result = await deps.catalogService.refreshCatalog();
+    ctx.body = { result };
   });
 
   return router;

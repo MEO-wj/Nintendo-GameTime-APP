@@ -32,7 +32,8 @@ export async function createAppDependencies(
     ? options.repository
     : (repositoryContext = await createRepository(env)).repository;
 
-  const catalogService = createCatalogService();
+  const catalogService = createCatalogService(repository);
+  await catalogService.ensureCatalogSeeded();
   const marketService = createMarketService();
   const nintendoClient = createNintendoClient(env);
   const alertService = new ConsoleAlertService();
@@ -43,6 +44,16 @@ export async function createAppDependencies(
     alertService
   });
   const playtimeService = createPlaytimeService(repository, catalogService);
+  const catalogRefreshTimer =
+    env.CATALOG_REFRESH_INTERVAL_MS > 0
+      ? setInterval(() => {
+          void catalogService.refreshCatalog().catch((error) => {
+            console.error("catalog refresh failed", error);
+          });
+        }, env.CATALOG_REFRESH_INTERVAL_MS)
+      : null;
+
+  catalogRefreshTimer?.unref?.();
 
   return {
     env,
@@ -53,6 +64,9 @@ export async function createAppDependencies(
     playtimeService,
     syncService,
     close: async () => {
+      if (catalogRefreshTimer) {
+        clearInterval(catalogRefreshTimer);
+      }
       if (repositoryContext) {
         await repositoryContext.close();
       }

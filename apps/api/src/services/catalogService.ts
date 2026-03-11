@@ -1,14 +1,17 @@
+import { EXTENDED_CATALOG_SEEDS } from "./catalogSeedData.js";
+import { CATALOG_LOCALIZATION_OVERRIDES } from "./catalogLocalizationOverrides.js";
+import type { Repository } from "../repositories/types.js";
+import type {
+  CatalogGameRow,
+  CatalogLocalizationsRow,
+  CatalogTextLocalizationRow
+} from "../types/domain.js";
+
 const DEFAULT_CURRENCY = "USD";
 const CACHE_TTL_MS = 1000 * 60 * 60;
 
-export interface CatalogTextLocalization {
-  title: string;
-  description: string | null;
-}
-
-export interface CatalogLocalizations {
-  zhHans?: CatalogTextLocalization;
-}
+export type CatalogTextLocalization = CatalogTextLocalizationRow;
+export type CatalogLocalizations = CatalogLocalizationsRow;
 
 export interface CatalogGame {
   externalId: string;
@@ -33,7 +36,13 @@ export interface CatalogSeedEntry {
   fallbackPriceAmount: number | null;
 }
 
-const CATALOG_SEEDS: CatalogSeedEntry[] = [
+export interface CatalogRefreshResult {
+  importedCount: number;
+  totalCount: number;
+  refreshedAt: string;
+}
+
+const FEATURED_CATALOG_SEEDS: CatalogSeedEntry[] = [
   {
     externalId: "the-legend-of-zelda-breath-of-the-wild-switch",
     title: "The Legend of Zelda: Breath of the Wild",
@@ -119,6 +128,81 @@ const CATALOG_SEEDS: CatalogSeedEntry[] = [
     fallbackPriceAmount: 59.99
   }
 ];
+
+function buildNintendoProductUrl(externalId: string): string {
+  return `https://www.nintendo.com/us/store/products/${externalId}/`;
+}
+
+function wrapPlaceholderTitle(title: string): string[] {
+  const words = title.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (next.length > 18 && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) {
+    lines.push(current);
+  }
+
+  return lines.slice(0, 4);
+}
+
+function escapeSvgText(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function buildPlaceholderCoverUrl(title: string): string {
+  const lines = wrapPlaceholderTitle(title);
+  const textNodes = lines
+    .map(
+      (line, index) =>
+        `<text x="52" y="${280 + index * 68}" fill="#fff7ef" font-size="44" font-family="Arial, Helvetica, sans-serif" font-weight="700">${escapeSvgText(line)}</text>`
+    )
+    .join("");
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" role="img" aria-label="${escapeSvgText(title)}">
+      <defs>
+        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stop-color="#b24a28" />
+          <stop offset="100%" stop-color="#241812" />
+        </linearGradient>
+      </defs>
+      <rect width="600" height="800" rx="42" fill="url(#bg)" />
+      <circle cx="486" cy="126" r="118" fill="#ffffff" opacity="0.08" />
+      <circle cx="92" cy="694" r="138" fill="#ffffff" opacity="0.08" />
+      <text x="52" y="112" fill="#f4d9c7" font-size="28" font-family="Arial, Helvetica, sans-serif" font-weight="700">Nintendo GameTime</text>
+      <text x="52" y="164" fill="#fff7ef" font-size="54" font-family="Arial, Helvetica, sans-serif" font-weight="800">Switch</text>
+      ${textNodes}
+    </svg>
+  `.replace(/\s+/g, " ").trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const CATALOG_SEEDS: CatalogSeedEntry[] = [
+  ...FEATURED_CATALOG_SEEDS,
+  ...EXTENDED_CATALOG_SEEDS.map((entry) => ({
+    externalId: entry.externalId,
+    title: entry.title,
+    storeUrl: buildNintendoProductUrl(entry.externalId),
+    fallbackCoverUrl: null,
+    fallbackPriceAmount: entry.fallbackPriceAmount
+  }))
+].slice(0, 300);
 
 const CATALOG_LOCALIZATIONS: Record<string, CatalogLocalizations> = {
   "the-legend-of-zelda-breath-of-the-wild-switch": {
@@ -207,6 +291,8 @@ const CATALOG_LOCALIZATIONS: Record<string, CatalogLocalizations> = {
   }
 };
 
+Object.assign(CATALOG_LOCALIZATIONS, CATALOG_LOCALIZATION_OVERRIDES);
+
 interface CachedCatalogItem {
   expiresAt: number;
   value: CatalogGame;
@@ -228,8 +314,11 @@ export interface CatalogService {
     query?: string;
     cursor?: string;
     limit?: number;
-  }): Promise<{ items: CatalogGame[]; nextCursor: string | null }>;
+  }): Promise<{ items: CatalogGame[]; nextCursor: string | null; totalCount: number }>;
   getCatalogGame(externalId: string): Promise<CatalogGame | null>;
+  ensureCatalogSeeded(): Promise<CatalogRefreshResult>;
+  refreshCatalog(): Promise<CatalogRefreshResult>;
+  getCatalogStatus(): Promise<{ totalCount: number; lastSyncedAt: string | null }>;
 }
 
 function normalizeText(value: string): string {
@@ -314,7 +403,7 @@ function buildFallbackCatalogGame(seed: CatalogSeedEntry): CatalogGame {
   return {
     externalId: seed.externalId,
     title: seed.title,
-    coverUrl: seed.fallbackCoverUrl,
+    coverUrl: seed.fallbackCoverUrl ?? buildPlaceholderCoverUrl(seed.title),
     storeUrl: seed.storeUrl,
     description: null,
     publisher: null,
@@ -329,6 +418,10 @@ function buildFallbackCatalogGame(seed: CatalogSeedEntry): CatalogGame {
 
 async function resolveCatalogGame(seed: CatalogSeedEntry): Promise<CatalogGame> {
   const fallback = buildFallbackCatalogGame(seed);
+
+  if (!seed.storeUrl.includes("/store/products/")) {
+    return fallback;
+  }
 
   try {
     const response = await fetch(seed.storeUrl, {
@@ -370,7 +463,24 @@ export function getCatalogSeeds(): CatalogSeedEntry[] {
   return [...CATALOG_SEEDS];
 }
 
-export function createCatalogService(): CatalogService {
+function mapCatalogRowToGame(row: CatalogGameRow): CatalogGame {
+  return {
+    externalId: row.externalId,
+    title: row.title,
+    coverUrl: row.coverUrl,
+    storeUrl: row.storeUrl,
+    description: row.description,
+    publisher: row.publisher,
+    releaseDate: row.releaseDate,
+    priceAmount: row.priceAmount,
+    priceCurrency: row.priceCurrency,
+    platform: row.platform,
+    region: row.region,
+    localizations: row.localizations
+  };
+}
+
+function createStaticCatalogService(): CatalogService {
   const cache = new Map<string, CachedCatalogItem>();
   const inflight = new Map<string, Promise<CatalogGame>>();
 
@@ -421,7 +531,8 @@ export function createCatalogService(): CatalogService {
 
       return {
         items,
-        nextCursor: nextOffset === null ? null : encodeCursor(nextOffset)
+        nextCursor: nextOffset === null ? null : encodeCursor(nextOffset),
+        totalCount: filteredSeeds.length
       };
     },
 
@@ -429,6 +540,164 @@ export function createCatalogService(): CatalogService {
       const seed = CATALOG_SEEDS.find((entry) => entry.externalId === externalId);
       if (!seed) return null;
       return loadSeed(seed);
+    },
+
+    async ensureCatalogSeeded() {
+      return {
+        importedCount: 0,
+        totalCount: CATALOG_SEEDS.length,
+        refreshedAt: new Date().toISOString()
+      };
+    },
+
+    async refreshCatalog() {
+      cache.clear();
+      return {
+        importedCount: 0,
+        totalCount: CATALOG_SEEDS.length,
+        refreshedAt: new Date().toISOString()
+      };
+    },
+
+    async getCatalogStatus() {
+      return {
+        totalCount: CATALOG_SEEDS.length,
+        lastSyncedAt: null
+      };
     }
   };
+}
+
+async function importCatalogSeeds(repository: Repository): Promise<CatalogRefreshResult> {
+  const refreshedAt = new Date().toISOString();
+  const resolvedGames = await Promise.all(CATALOG_SEEDS.map((seed) => resolveCatalogGame(seed)));
+
+  for (const [index, catalogGame] of resolvedGames.entries()) {
+    await repository.upsertCatalogGame({
+      externalId: catalogGame.externalId,
+      sortOrder: index,
+      title: catalogGame.title,
+      coverUrl: catalogGame.coverUrl,
+      storeUrl: catalogGame.storeUrl,
+      description: catalogGame.description,
+      publisher: catalogGame.publisher,
+      releaseDate: catalogGame.releaseDate,
+      priceAmount: catalogGame.priceAmount,
+      priceCurrency: catalogGame.priceCurrency,
+      platform: catalogGame.platform,
+      region: catalogGame.region,
+      source: "seed-import",
+      localizations: catalogGame.localizations,
+      lastSyncedAt: refreshedAt
+    });
+  }
+
+  return {
+    importedCount: resolvedGames.length,
+    totalCount: await repository.countCatalogGames(),
+    refreshedAt
+  };
+}
+
+function createRepositoryCatalogService(repository: Repository): CatalogService {
+  return {
+    async listCatalog(input) {
+      const query = normalizeText(input?.query ?? "");
+      const limit = Math.min(Math.max(input?.limit ?? 12, 1), 24);
+      const offset = decodeCursor(input?.cursor);
+      const rows = await repository.listCatalogGames();
+      const filteredRows = query
+        ? rows.filter((row) => {
+            const zhHansTitle = row.localizations.zhHans?.title ?? "";
+            return normalizeText(`${row.title} ${row.externalId} ${zhHansTitle}`).includes(query);
+          })
+        : rows;
+
+      const pageRows = filteredRows.slice(offset, offset + limit);
+      const nextOffset = offset + limit < filteredRows.length ? offset + limit : null;
+
+      return {
+        items: pageRows.map((row) => mapCatalogRowToGame(row)),
+        nextCursor: nextOffset === null ? null : encodeCursor(nextOffset),
+        totalCount: filteredRows.length
+      };
+    },
+
+    async getCatalogGame(externalId: string) {
+      const existing = await repository.getCatalogGameByExternalId(externalId);
+      if (existing) {
+        return mapCatalogRowToGame(existing);
+      }
+
+      const seed = CATALOG_SEEDS.find((entry) => entry.externalId === externalId);
+      if (!seed) return null;
+
+      const resolved = await resolveCatalogGame(seed);
+      const stored = await repository.upsertCatalogGame({
+        externalId: resolved.externalId,
+        sortOrder: CATALOG_SEEDS.findIndex((entry) => entry.externalId === externalId),
+        title: resolved.title,
+        coverUrl: resolved.coverUrl,
+        storeUrl: resolved.storeUrl,
+        description: resolved.description,
+        publisher: resolved.publisher,
+        releaseDate: resolved.releaseDate,
+        priceAmount: resolved.priceAmount,
+        priceCurrency: resolved.priceCurrency,
+        platform: resolved.platform,
+        region: resolved.region,
+        source: "seed-import",
+        localizations: resolved.localizations,
+        lastSyncedAt: new Date().toISOString()
+      });
+      return mapCatalogRowToGame(stored);
+    },
+
+    async ensureCatalogSeeded() {
+      const existingCount = await repository.countCatalogGames();
+      if (existingCount >= CATALOG_SEEDS.length) {
+        const rows = await repository.listCatalogGames();
+        const lastSyncedAt = rows.reduce<string | null>((latest, row) => {
+          if (!latest || Date.parse(row.lastSyncedAt) > Date.parse(latest)) {
+            return row.lastSyncedAt;
+          }
+          return latest;
+        }, null);
+        return {
+          importedCount: 0,
+          totalCount: rows.length,
+          refreshedAt: lastSyncedAt ?? new Date().toISOString()
+        };
+      }
+
+      return importCatalogSeeds(repository);
+    },
+
+    async refreshCatalog() {
+      return importCatalogSeeds(repository);
+    },
+
+    async getCatalogStatus() {
+      const rows = await repository.listCatalogGames();
+      const lastSyncedAt = rows.reduce<string | null>((latest, row) => {
+        if (!latest || Date.parse(row.lastSyncedAt) > Date.parse(latest)) {
+          return row.lastSyncedAt;
+        }
+        return latest;
+      }, null);
+
+      return {
+        totalCount: rows.length,
+        lastSyncedAt
+      };
+    }
+  };
+}
+
+export function createCatalogService(repository?: Repository): CatalogService {
+  if (!repository) {
+    return createStaticCatalogService();
+  }
+
+  return createRepositoryCatalogService(repository);
 }

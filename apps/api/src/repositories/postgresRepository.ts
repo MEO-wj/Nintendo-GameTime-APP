@@ -4,6 +4,8 @@ import type { CorrectionType } from "@nintendo-gametime/shared-types";
 import type { Repository } from "./types.js";
 import type {
   AuditLogRow,
+  CatalogGameRow,
+  CatalogLocalizationsRow,
   CorrectionRow,
   GameRow,
   NintendoAccount,
@@ -15,6 +17,39 @@ import type {
 
 function asIso(value: string | Date): string {
   return new Date(value).toISOString();
+}
+
+function asCatalogLocalizations(value: unknown): CatalogLocalizationsRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  return value as CatalogLocalizationsRow;
+}
+
+function mapCatalogGameRow(row: Record<string, unknown>): CatalogGameRow {
+  return {
+    id: String(row.id),
+    externalId: String(row.external_id),
+    sortOrder: Number(row.sort_order),
+    title: String(row.title),
+    coverUrl: row.cover_url === null ? null : String(row.cover_url),
+    storeUrl: String(row.store_url),
+    description: row.description === null ? null : String(row.description),
+    publisher: row.publisher === null ? null : String(row.publisher),
+    releaseDate: row.release_date === null ? null : String(row.release_date),
+    priceAmount:
+      row.price_amount === null || typeof row.price_amount === "undefined"
+        ? null
+        : Number.parseFloat(String(row.price_amount)),
+    priceCurrency: String(row.price_currency),
+    platform: String(row.platform) as "Switch",
+    region: String(row.region) as "GLOBAL",
+    source: String(row.source),
+    localizations: asCatalogLocalizations(row.localizations),
+    lastSyncedAt: asIso(String(row.last_synced_at)),
+    createdAt: asIso(String(row.created_at)),
+    updatedAt: asIso(String(row.updated_at))
+  };
 }
 
 export class PostgresRepository implements Repository {
@@ -68,6 +103,28 @@ export class PostgresRepository implements Repository {
         deleted_at TIMESTAMPTZ NULL,
         UNIQUE(user_id, external_id)
       );
+      CREATE TABLE IF NOT EXISTS catalog_games (
+        id TEXT PRIMARY KEY,
+        external_id TEXT UNIQUE NOT NULL,
+        sort_order INT NOT NULL,
+        title TEXT NOT NULL,
+        cover_url TEXT NULL,
+        store_url TEXT NOT NULL,
+        description TEXT NULL,
+        publisher TEXT NULL,
+        release_date TEXT NULL,
+        price_amount NUMERIC(10, 2) NULL,
+        price_currency TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        region TEXT NOT NULL,
+        source TEXT NOT NULL,
+        localizations JSONB NOT NULL DEFAULT '{}'::jsonb,
+        last_synced_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS catalog_games_sort_order_idx
+        ON catalog_games (sort_order);
       CREATE TABLE IF NOT EXISTS official_snapshots (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id),
@@ -502,6 +559,132 @@ export class PostgresRepository implements Repository {
       updatedAt: asIso(row.updated_at),
       deletedAt: row.deleted_at ? asIso(row.deleted_at) : null
     };
+  }
+
+  async upsertCatalogGame(input: {
+    externalId: string;
+    sortOrder: number;
+    title: string;
+    coverUrl: string | null;
+    storeUrl: string;
+    description: string | null;
+    publisher: string | null;
+    releaseDate: string | null;
+    priceAmount: number | null;
+    priceCurrency: string;
+    platform: "Switch";
+    region: "GLOBAL";
+    source: string;
+    localizations: CatalogLocalizationsRow;
+    lastSyncedAt: string;
+  }): Promise<CatalogGameRow> {
+    const now = new Date().toISOString();
+    const existing = await this.pool.query(
+      "SELECT id, created_at FROM catalog_games WHERE external_id = $1",
+      [input.externalId]
+    );
+
+    if (existing.rows[0]) {
+      await this.pool.query(
+        `UPDATE catalog_games
+         SET sort_order = $1,
+             title = $2,
+             cover_url = $3,
+             store_url = $4,
+             description = $5,
+             publisher = $6,
+             release_date = $7,
+             price_amount = $8,
+             price_currency = $9,
+             platform = $10,
+             region = $11,
+             source = $12,
+             localizations = $13::jsonb,
+             last_synced_at = $14,
+             updated_at = $15
+         WHERE external_id = $16`,
+        [
+          input.sortOrder,
+          input.title,
+          input.coverUrl,
+          input.storeUrl,
+          input.description,
+          input.publisher,
+          input.releaseDate,
+          input.priceAmount,
+          input.priceCurrency,
+          input.platform,
+          input.region,
+          input.source,
+          JSON.stringify(input.localizations),
+          input.lastSyncedAt,
+          now,
+          input.externalId
+        ]
+      );
+    } else {
+      await this.pool.query(
+        `INSERT INTO catalog_games
+         (id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date, price_amount,
+          price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17, $17)`,
+        [
+          randomUUID(),
+          input.externalId,
+          input.sortOrder,
+          input.title,
+          input.coverUrl,
+          input.storeUrl,
+          input.description,
+          input.publisher,
+          input.releaseDate,
+          input.priceAmount,
+          input.priceCurrency,
+          input.platform,
+          input.region,
+          input.source,
+          JSON.stringify(input.localizations),
+          input.lastSyncedAt,
+          now
+        ]
+      );
+    }
+
+    const result = await this.pool.query(
+      `SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
+              price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+       FROM catalog_games
+       WHERE external_id = $1`,
+      [input.externalId]
+    );
+    return mapCatalogGameRow(result.rows[0]);
+  }
+
+  async getCatalogGameByExternalId(externalId: string): Promise<CatalogGameRow | null> {
+    const result = await this.pool.query(
+      `SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
+              price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+       FROM catalog_games
+       WHERE external_id = $1`,
+      [externalId]
+    );
+    const row = result.rows[0];
+    return row ? mapCatalogGameRow(row) : null;
+  }
+
+  async listCatalogGames(): Promise<CatalogGameRow[]> {
+    const result = await this.pool.query(
+      `SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
+              price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+       FROM catalog_games
+       ORDER BY sort_order ASC, title ASC`
+    );
+    return result.rows.map((row) => mapCatalogGameRow(row));
+  }
+
+  async countCatalogGames(): Promise<number> {
+    const result = await this.pool.query("SELECT COUNT(*)::int AS c FROM catalog_games");
+    return Number(result.rows[0]?.c ?? 0);
   }
 
   async insertOfficialSnapshot(input: {

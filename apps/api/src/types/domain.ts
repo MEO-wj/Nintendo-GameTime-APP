@@ -50,6 +50,36 @@ export interface GameRow {
   deletedAt: string | null;
 }
 
+export interface CatalogTextLocalizationRow {
+  title: string;
+  description: string | null;
+}
+
+export interface CatalogLocalizationsRow {
+  zhHans?: CatalogTextLocalizationRow;
+}
+
+export interface CatalogGameRow {
+  id: string;
+  externalId: string;
+  sortOrder: number;
+  title: string;
+  coverUrl: string | null;
+  storeUrl: string;
+  description: string | null;
+  publisher: string | null;
+  releaseDate: string | null;
+  priceAmount: number | null;
+  priceCurrency: string;
+  platform: "Switch";
+  region: "GLOBAL";
+  source: string;
+  localizations: CatalogLocalizationsRow;
+  lastSyncedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface OfficialSnapshotRow {
   id: string;
   userId: string;

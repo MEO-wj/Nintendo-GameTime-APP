@@ -80,10 +80,37 @@ function withinLastDays(timestamp: string | null, days: number): boolean {
   return Date.parse(timestamp) >= cutoff;
 }
 
+function getRecentCorrectionMinutes(
+  corrections: Array<{
+    type: "SET_TOTAL" | "ADD_DELTA";
+    minutes: number;
+    createdAt: string;
+    revokedAt?: string | null;
+  }>,
+  days: number
+): number {
+  const recentActive = corrections
+    .filter((correction) => !correction.revokedAt && withinLastDays(correction.createdAt, days))
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+
+  if (recentActive.length === 0) return 0;
+
+  const latestSetTotal = recentActive.find((correction) => correction.type === "SET_TOTAL");
+  if (latestSetTotal) {
+    return Math.max(0, latestSetTotal.minutes);
+  }
+
+  return Math.max(
+    0,
+    recentActive.reduce((sum, correction) => sum + correction.minutes, 0)
+  );
+}
+
 export function createPlaytimeService(repository: Repository, catalogService: CatalogService): PlaytimeService {
   async function buildEffectiveMap(userId: string): Promise<{
     games: Awaited<ReturnType<Repository["listGamesByUserId"]>>;
     effectiveMap: Record<string, EffectivePlaytime>;
+    correctionsByGame: Record<string, PlaytimeCorrection[]>;
   }> {
     const [games, latestSnapshots, corrections] = await Promise.all([
       repository.listGamesByUserId(userId),
@@ -118,6 +145,7 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
 
     return {
       games,
+      correctionsByGame,
       effectiveMap: calculateEffectivePlaytimeMap({
         officialMinutesByGame,
         correctionsByGame
@@ -164,9 +192,13 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
         0
       );
       const totalPriceAmount = state.games.reduce((acc, game) => acc + (game.priceJpy ?? 0), 0);
-      const recent30Minutes = state.games
-        .filter((game) => withinLastDays(game.lastPlayedAt, 30))
-        .reduce((acc, game) => acc + (state.effectiveMap[game.id]?.totalMinutes ?? 0), 0);
+      const recent30Minutes = state.games.reduce((acc, game) => {
+        if (withinLastDays(game.lastPlayedAt, 30)) {
+          return acc + (state.effectiveMap[game.id]?.totalMinutes ?? 0);
+        }
+
+        return acc + getRecentCorrectionMinutes(state.correctionsByGame[game.id] ?? [], 30);
+      }, 0);
       const mutableSource = {
         official: 0,
         corrected: 0,

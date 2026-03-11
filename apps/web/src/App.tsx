@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Form, Input, InputNumber, Popconfirm, Select, Spin, message } from "antd";
+import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Select, Spin, message } from "antd";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
 
 type CorrectionType = "SET_TOTAL" | "ADD_DELTA";
 type PlaytimeSource = "official" | "corrected" | "manual-only";
 type MarketMode = "GLOBAL" | "DOMESTIC";
+type GamesTab = "owned" | "recent" | "top";
 type View =
   | { page: "home" }
+  | { page: "ranking" }
   | { page: "library" }
   | { page: "game"; gameId: string }
   | { page: "catalog"; externalId: string }
@@ -98,6 +100,12 @@ interface CatalogDetail extends Omit<CatalogItem, "isOwned" | "ownedGameId" | "o
   corrections: CorrectionItem[];
 }
 
+interface CatalogListResponse {
+  items: CatalogItem[];
+  nextCursor: string | null;
+  totalCount: number;
+}
+
 interface AccountInfo {
   id: string;
   userId: string;
@@ -156,6 +164,8 @@ const PLAYTIME_PALETTE = [
   "#8753c7",
   "#c0508f"
 ];
+
+const CATALOG_PAGE_SIZE = 9;
 
 function parseStoredUser(): User | null {
   const token = getToken();
@@ -274,7 +284,7 @@ function getDisplayDescription(
   marketMode: MarketMode
 ): string | null {
   if (marketMode === "DOMESTIC") {
-    return input.localizations?.zhHans?.description ?? input.description;
+    return input.localizations?.zhHans?.description ?? null;
   }
   return input.description;
 }
@@ -286,6 +296,7 @@ function getPlaytimeColor(index: number): string {
 function parseHash(): View {
   const raw = window.location.hash.replace(/^#\/?/, "");
   const parts = raw.split("/").filter(Boolean);
+  if (parts[0] === "ranking") return { page: "ranking" };
   if (parts[0] === "library") return { page: "library" };
   if (parts[0] === "account") return { page: "account" };
   if (parts[0] === "game" && parts[1]) return { page: "game", gameId: decodeURIComponent(parts[1]) };
@@ -297,6 +308,16 @@ function toHash(view: View): string {
   if (view.page === "game") return `#/game/${encodeURIComponent(view.gameId)}`;
   if (view.page === "catalog") return `#/catalog/${encodeURIComponent(view.externalId)}`;
   return view.page === "home" ? "#/" : `#/${view.page}`;
+}
+
+function toBackgroundImage(url: string | null | undefined): string {
+  const resolved = url ?? FALLBACK_COVERS[0];
+  return `url("${resolved.replace(/"/g, '\\"')}")`;
+}
+
+function encodeCatalogCursor(offset: number): string | undefined {
+  if (offset <= 0) return undefined;
+  return window.btoa(String(offset)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function CoverCard(input: {
@@ -311,7 +332,7 @@ function CoverCard(input: {
     <button type="button" className="cover-card" onClick={input.onClick}>
       <div
         className="cover-card-media"
-        style={{ backgroundImage: `url(${input.coverUrl ?? FALLBACK_COVERS[0]})` }}
+        style={{ backgroundImage: toBackgroundImage(input.coverUrl) }}
       >
         {input.badge && <span className="cover-card-badge">{input.badge}</span>}
         {input.owned && <span className="cover-card-owned">已入库</span>}
@@ -333,8 +354,10 @@ export default function App() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [ownedGames, setOwnedGames] = useState<OwnedGame[]>([]);
+  const [topGames, setTopGames] = useState<OwnedGame[]>([]);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
-  const [catalogNextCursor, setCatalogNextCursor] = useState<string | null>(null);
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogTotalCount, setCatalogTotalCount] = useState(0);
   const [catalogDetail, setCatalogDetail] = useState<CatalogDetail | null>(null);
   const [gameDetail, setGameDetail] = useState<GameDetail | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
@@ -357,12 +380,14 @@ export default function App() {
     return [...dynamic, ...FALLBACK_COVERS].slice(0, 6);
   }, [catalogItems, ownedGames]);
   const featuredOwnedGames = useMemo(() => ownedGames.slice(0, 6), [ownedGames]);
-  const dashboardGames = useMemo(
-    () =>
-      [...ownedGames]
-        .sort((left, right) => right.effectivePlaytime.totalMinutes - left.effectivePlaytime.totalMinutes)
-        .slice(0, 5),
-    [ownedGames]
+  const dashboardGames = useMemo(() => topGames.slice(0, 5), [topGames]);
+  const rankingTotalMinutes = useMemo(
+    () => topGames.reduce((sum, game) => sum + game.effectivePlaytime.totalMinutes, 0),
+    [topGames]
+  );
+  const rankingMaxMinutes = useMemo(
+    () => topGames.reduce((max, game) => Math.max(max, game.effectivePlaytime.totalMinutes), 0),
+    [topGames]
   );
   const dashboardTotalMinutes = useMemo(
     () => dashboardGames.reduce((sum, game) => sum + game.effectivePlaytime.totalMinutes, 0),
@@ -397,9 +422,24 @@ export default function App() {
     setView(nextView);
   }
 
-  async function fetchOwnedGames(limit = 18) {
-    const response = await api.get<{ items: OwnedGame[] }>("/api/games", { params: { tab: "owned", limit } });
+  async function fetchOwnedGames(limit = 18, tab: GamesTab = "owned") {
+    const response = await api.get<{ items: OwnedGame[] }>("/api/games", { params: { tab, limit } });
     setOwnedGames(response.data.items);
+  }
+
+  async function fetchTopGames() {
+    const items: OwnedGame[] = [];
+    let cursor: string | null | undefined = undefined;
+
+    do {
+      const response: { data: { items: OwnedGame[]; nextCursor: string | null } } = await api.get("/api/games", {
+        params: { tab: "top", limit: 100, cursor }
+      });
+      items.push(...response.data.items);
+      cursor = response.data.nextCursor;
+    } while (cursor);
+
+    setTopGames(items);
   }
 
   async function fetchSummary() {
@@ -419,12 +459,15 @@ export default function App() {
     setPendingMarketMode(response.data.preference.marketMode);
   }
 
-  async function fetchCatalogPage(input?: { query?: string; cursor?: string; append?: boolean }) {
-    const response = await api.get<{ items: CatalogItem[]; nextCursor: string | null }>("/api/catalog/games", {
-      params: { q: input?.query ?? catalogQuery, cursor: input?.cursor, limit: 12 }
+  async function fetchCatalogPage(input?: { query?: string; page?: number }) {
+    const page = input?.page ?? 1;
+    const cursor = encodeCatalogCursor((page - 1) * CATALOG_PAGE_SIZE);
+    const response = await api.get<CatalogListResponse>("/api/catalog/games", {
+      params: { q: input?.query ?? catalogQuery, cursor, limit: CATALOG_PAGE_SIZE }
     });
-    setCatalogItems((prev) => (input?.append ? [...prev, ...response.data.items] : response.data.items));
-    setCatalogNextCursor(response.data.nextCursor);
+    setCatalogItems(response.data.items);
+    setCatalogTotalCount(response.data.totalCount);
+    setCatalogPage(page);
   }
 
   async function loadCurrentView(nextView: View = view) {
@@ -432,11 +475,15 @@ export default function App() {
     setErrorText(null);
     try {
       if (nextView.page === "home") {
-        await Promise.all([fetchSummary(), fetchOwnedGames(18)]);
+        await Promise.all([fetchSummary(), fetchOwnedGames(18), fetchTopGames()]);
+        setGameDetail(null);
+        setCatalogDetail(null);
+      } else if (nextView.page === "ranking") {
+        await Promise.all([fetchSummary(), fetchTopGames()]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "library") {
-        await Promise.all([fetchSummary(), fetchOwnedGames(), fetchCatalogPage({ query: catalogQuery })]);
+        await Promise.all([fetchSummary(), fetchOwnedGames(), fetchCatalogPage({ query: catalogQuery, page: 1 })]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "game") {
@@ -632,6 +679,7 @@ export default function App() {
     setUser(null);
     setSummary(null);
     setOwnedGames([]);
+    setTopGames([]);
     setCatalogItems([]);
     setCatalogDetail(null);
     setGameDetail(null);
@@ -652,7 +700,7 @@ export default function App() {
             <div
               key={`${cover}-${index}`}
               className="auth-wall-cover"
-              style={{ backgroundImage: `url(${cover})` }}
+              style={{ backgroundImage: toBackgroundImage(cover) }}
             />
           ))}
         </div>
@@ -693,7 +741,7 @@ export default function App() {
           <div
             key={`${cover}-${index}`}
             className="hero-wall-cover"
-            style={{ backgroundImage: `url(${cover})` }}
+            style={{ backgroundImage: toBackgroundImage(cover) }}
           />
         ))}
       </div>
@@ -709,7 +757,11 @@ export default function App() {
         </div>
 
         <nav className="topnav">
-          <button type="button" className={view.page === "home" ? "topnav-active" : ""} onClick={() => navigate({ page: "home" })}>
+          <button
+            type="button"
+            className={view.page === "home" || view.page === "ranking" ? "topnav-active" : ""}
+            onClick={() => navigate({ page: "home" })}
+          >
             概览
           </button>
           <button
@@ -770,7 +822,10 @@ export default function App() {
                     <span className="eyebrow">时长仪表盘</span>
                     <h2>按游戏查看时长分布</h2>
                   </div>
-                  <div className="subtle-note">不同颜色对应不同游戏，点击条目可直接进入详情页。</div>
+                  <div className="row-actions">
+                    <div className="subtle-note">右侧只展示前 5 名，点击条目可直接进入详情页。</div>
+                    <Button onClick={() => navigate({ page: "ranking" })}>展开排行</Button>
+                  </div>
                 </div>
                 {dashboardGames.length > 0 ? (
                   <div className="dashboard-layout">
@@ -861,6 +916,65 @@ export default function App() {
             </div>
           )}
 
+          {view.page === "ranking" && (
+            <div className="page-grid">
+              <section className="panel panel-wide ranking-panel">
+                <div className="panel-head">
+                  <div>
+                    <span className="eyebrow">全库排行</span>
+                    <h2>所有入库游戏时长排名</h2>
+                  </div>
+                  <div className="row-actions">
+                    <div className="subtle-note">
+                      共 {topGames.length} 款，累计 {formatDuration(rankingTotalMinutes)}
+                    </div>
+                    <Button onClick={() => navigate({ page: "home" })}>返回概览</Button>
+                  </div>
+                </div>
+
+                {topGames.length > 0 ? (
+                  <div className="ranking-list">
+                    {topGames.map((game, index) => {
+                      const minutes = game.effectivePlaytime.totalMinutes;
+                      const share = rankingTotalMinutes > 0 ? Math.round((minutes / rankingTotalMinutes) * 100) : 0;
+                      const width = rankingMaxMinutes > 0 ? (minutes / rankingMaxMinutes) * 100 : 0;
+                      const color = getPlaytimeColor(index);
+
+                      return (
+                        <button
+                          key={game.id}
+                          type="button"
+                          className="dashboard-row ranking-row"
+                          onClick={() => navigate({ page: "game", gameId: game.id })}
+                        >
+                          <div className="dashboard-row-head ranking-row-head">
+                            <div className="ranking-meta">
+                              <span className="ranking-index">#{index + 1}</span>
+                              <span className="dashboard-swatch" style={{ backgroundColor: color }} />
+                            </div>
+                            <strong>{getDisplayTitle(game, marketMode)}</strong>
+                            <span>{formatDuration(minutes)} / {share}%</span>
+                          </div>
+                          <div className="dashboard-bar-track">
+                            <div
+                              className="dashboard-bar-fill"
+                              style={{
+                                width: `${width}%`,
+                                background: `linear-gradient(90deg, ${color}, ${color}cc)`
+                              }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="empty-block">当前还没有已入库游戏，入库后这里会展示完整的时长排行。</div>
+                )}
+              </section>
+            </div>
+          )}
+
           {view.page === "library" && (
             <div className="page-grid">
               <section className="panel panel-wide">
@@ -901,7 +1015,7 @@ export default function App() {
                     <Button type="primary" onClick={() => loadCurrentView({ page: "library" })}>搜索</Button>
                   </div>
                 </div>
-                <div className="card-grid">
+                <div className="catalog-grid">
                   {catalogItems.map((item) => (
                     <CoverCard
                       key={item.externalId}
@@ -914,15 +1028,17 @@ export default function App() {
                     />
                   ))}
                 </div>
-                {catalogNextCursor && (
-                  <div className="load-more-row">
-                    <Button
-                      onClick={() =>
-                        fetchCatalogPage({ query: catalogQuery, cursor: catalogNextCursor, append: true }).catch(() => undefined)
-                      }
-                    >
-                      加载更多
-                    </Button>
+                {catalogTotalCount > CATALOG_PAGE_SIZE && (
+                  <div className="catalog-pagination">
+                    <Pagination
+                      current={catalogPage}
+                      total={catalogTotalCount}
+                      pageSize={CATALOG_PAGE_SIZE}
+                      showSizeChanger={false}
+                      onChange={(page) => {
+                        fetchCatalogPage({ query: catalogQuery, page }).catch(() => undefined);
+                      }}
+                    />
                   </div>
                 )}
               </section>
@@ -932,7 +1048,7 @@ export default function App() {
           {view.page === "catalog" && catalogDetail && (
             <div className="page-grid">
               <section className="panel panel-wide detail-hero">
-                <div className="detail-cover" style={{ backgroundImage: `url(${catalogDetail.coverUrl ?? FALLBACK_COVERS[0]})` }} />
+                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(catalogDetail.coverUrl) }} />
                 <div className="detail-copy">
                   <span className="eyebrow">目录详情</span>
                   <h1>{getDisplayTitle(catalogDetail, marketMode)}</h1>
@@ -960,7 +1076,7 @@ export default function App() {
           {view.page === "game" && gameDetail && (
             <div className="page-grid">
               <section className="panel panel-wide detail-hero">
-                <div className="detail-cover" style={{ backgroundImage: `url(${gameDetail.coverUrl ?? FALLBACK_COVERS[0]})` }}>
+                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(gameDetail.coverUrl) }}>
                   <span className="cover-card-badge">{formatDuration(gameDetail.effectivePlaytime.totalMinutes)}</span>
                 </div>
                 <div className="detail-copy">

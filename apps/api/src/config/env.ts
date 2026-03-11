@@ -18,6 +18,7 @@ const envSchema = z.object({
   NINTENDO_MOCK: z.coerce.boolean().default(true),
   API_BASE_URL: z.string().default("http://localhost:4000"),
   SYNC_INTERVAL_MS: z.coerce.number().default(300000),
+  CATALOG_REFRESH_INTERVAL_MS: z.coerce.number().default(21600000),
   ALERT_FAIL_THRESHOLD: z.coerce.number().default(3)
 });
 

@@ -2,6 +2,8 @@ import type { CorrectionType } from "@nintendo-gametime/shared-types";
 import type {
   AuditLogRow,
   AuthCode,
+  CatalogGameRow,
+  CatalogLocalizationsRow,
   CorrectionRow,
   GameRow,
   NintendoAccount,
@@ -51,6 +53,27 @@ export interface Repository {
   listGamesByUserId(userId: string): Promise<GameRow[]>;
   listGamesPaginatedByUserId(userId: string, input: { offset: number; limit: number }): Promise<PaginationResult<GameRow>>;
   removeGame(userId: string, gameId: string, deletedAt: string): Promise<GameRow | null>;
+
+  upsertCatalogGame(input: {
+    externalId: string;
+    sortOrder: number;
+    title: string;
+    coverUrl: string | null;
+    storeUrl: string;
+    description: string | null;
+    publisher: string | null;
+    releaseDate: string | null;
+    priceAmount: number | null;
+    priceCurrency: string;
+    platform: "Switch";
+    region: "GLOBAL";
+    source: string;
+    localizations: CatalogLocalizationsRow;
+    lastSyncedAt: string;
+  }): Promise<CatalogGameRow>;
+  getCatalogGameByExternalId(externalId: string): Promise<CatalogGameRow | null>;
+  listCatalogGames(): Promise<CatalogGameRow[]>;
+  countCatalogGames(): Promise<number>;
 
   insertOfficialSnapshot(input: {
     userId: string;
