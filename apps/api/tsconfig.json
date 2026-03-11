@@ -6,5 +6,5 @@
     "declaration": true,
     "baseUrl": "."
   },
-  "include": ["src", "test"]
+  "include": ["src"]
 }
