@@ -13,6 +13,25 @@ export function createAccountsRouter(deps: AppDependencies): Router {
   const router = new Router();
   const requireAuth = createAuthMiddleware(deps.env);
 
+  router.get("/api/accounts/nintendo", requireAuth, async (ctx) => {
+    const authUser = requireAuthUser(ctx.state);
+    const account = await deps.repository.getNintendoAccountByUserId(authUser.userId);
+    if (!account) {
+      ctx.body = { account: null };
+      return;
+    }
+
+    ctx.body = {
+      account: {
+        id: account.id,
+        userId: account.userId,
+        region: account.region,
+        lastSyncAt: account.lastSyncAt,
+        syncFailCount: account.syncFailCount
+      }
+    };
+  });
+
   router.post("/api/accounts/nintendo/bind", requireAuth, async (ctx) => {
     const authUser = requireAuthUser(ctx.state);
     const parsed = bindSchema.safeParse(ctx.request.body);

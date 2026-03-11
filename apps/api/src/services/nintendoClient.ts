@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AppEnv } from "../config/env.js";
 import type { NintendoFetchedGame } from "../types/domain.js";
+import { createCatalogService, getCatalogSeeds } from "./catalogService.js";
 
 export interface NintendoClient {
   fetchUserGames(sessionToken: string): Promise<NintendoFetchedGame[]>;
@@ -12,45 +13,39 @@ function seededNumber(seed: string, min: number, max: number): number {
   return min + (value % (max - min + 1));
 }
 
-function mockGames(sessionToken: string): NintendoFetchedGame[] {
+const mockCatalogService = createCatalogService();
+
+async function mockGames(sessionToken: string): Promise<NintendoFetchedGame[]> {
   const daySeed = new Date().toISOString().slice(0, 10);
   const base = `${sessionToken}:${daySeed}`;
+
+  const seedIds = [
+    "the-legend-of-zelda-breath-of-the-wild-switch",
+    "super-mario-odyssey-switch",
+    "dead-cells-switch",
+    "hollow-knight-switch"
+  ];
+  const seedRows = getCatalogSeeds().filter((entry) => seedIds.includes(entry.externalId));
+  const catalogGames = await Promise.all(
+    seedRows.map(async (seed) => (await mockCatalogService.getCatalogGame(seed.externalId)) ?? null)
+  );
+
   return [
+    ...catalogGames
+      .filter((entry): entry is NonNullable<(typeof catalogGames)[number]> => Boolean(entry))
+      .map((entry, index) => ({
+        externalId: entry.externalId,
+        title: entry.title,
+        coverUrl: entry.coverUrl,
+        region: "GLOBAL" as const,
+        platform: "Switch" as const,
+        priceJpy: entry.priceAmount,
+        playedMinutes: seededNumber(`${base}:${entry.externalId}`, 20 + index * 10, 160 + index * 40) * 60,
+        ownedAt: new Date(Date.now() - (20 + index * 9) * 86400000).toISOString(),
+        lastPlayedAt: new Date(Date.now() - (index + 1) * 86400000).toISOString()
+      })),
     {
-      externalId: "switch-zelda-botw",
-      title: "The Legend of Zelda: Breath of the Wild",
-      coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1r7h.jpg",
-      region: "JP",
-      platform: "Switch",
-      priceJpy: 7678,
-      playedMinutes: seededNumber(`${base}:botw`, 100, 320) * 60,
-      ownedAt: "2025-01-16T10:00:00.000Z",
-      lastPlayedAt: new Date(Date.now() - 86400000).toISOString()
-    },
-    {
-      externalId: "switch-mario-odyssey",
-      title: "Super Mario Odyssey",
-      coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1mxf.jpg",
-      region: "JP",
-      platform: "Switch",
-      priceJpy: 6578,
-      playedMinutes: seededNumber(`${base}:odyssey`, 40, 180) * 60,
-      ownedAt: "2025-10-05T08:00:00.000Z",
-      lastPlayedAt: new Date(Date.now() - 5 * 86400000).toISOString()
-    },
-    {
-      externalId: "switch-dead-cells",
-      title: "Dead Cells",
-      coverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1q7d.jpg",
-      region: "JP",
-      platform: "Switch",
-      priceJpy: 2480,
-      playedMinutes: seededNumber(`${base}:deadcells`, 20, 120) * 60,
-      ownedAt: "2026-03-04T10:00:00.000Z",
-      lastPlayedAt: new Date(Date.now() - 2 * 86400000).toISOString()
-    },
-    {
-      externalId: "switch-manual-only",
+      externalId: "manual-tracked-game",
       title: "Manual Tracked Game",
       coverUrl: null,
       region: "UNKNOWN",

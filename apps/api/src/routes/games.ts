@@ -9,6 +9,14 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+const gameParamsSchema = z.object({
+  id: z.string().min(1)
+});
+
+const addToLibrarySchema = z.object({
+  externalId: z.string().min(1)
+});
+
 export function createGamesRouter(deps: AppDependencies): Router {
   const router = new Router();
   const requireAuth = createAuthMiddleware(deps.env);
@@ -28,6 +36,43 @@ export function createGamesRouter(deps: AppDependencies): Router {
       limit: parsed.data.limit
     });
     ctx.body = result;
+  });
+
+  router.get("/api/games/:id", requireAuth, async (ctx) => {
+    const parsed = gameParamsSchema.safeParse(ctx.params);
+    if (!parsed.success) {
+      ctx.status = 400;
+      ctx.body = { message: "Invalid params", issues: parsed.error.flatten() };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    const detail = await deps.playtimeService.getGameDetail(authUser.userId, parsed.data.id);
+    if (!detail) {
+      ctx.status = 404;
+      ctx.body = { message: "Game not found" };
+      return;
+    }
+
+    ctx.body = detail;
+  });
+
+  router.post("/api/games/library", requireAuth, async (ctx) => {
+    const parsed = addToLibrarySchema.safeParse(ctx.request.body);
+    if (!parsed.success) {
+      ctx.status = 400;
+      ctx.body = { message: "Invalid payload", issues: parsed.error.flatten() };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    const detail = await deps.playtimeService.addGameToLibrary({
+      userId: authUser.userId,
+      externalId: parsed.data.externalId
+    });
+
+    ctx.status = 201;
+    ctx.body = detail;
   });
 
   return router;

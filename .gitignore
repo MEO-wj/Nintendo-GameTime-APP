@@ -9,3 +9,6 @@ coverage
 pnpm-lock.yaml
 apps/web/android
 apps/web/ios
+artifacts/
+*.log
+*.err

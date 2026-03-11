@@ -4,6 +4,7 @@ import {
   type PlaytimeCorrection
 } from "@nintendo-gametime/shared-types";
 import type { Repository } from "../repositories/types.js";
+import type { CatalogService } from "./catalogService.js";
 import { decodeCursor, encodeCursor } from "../utils/pagination.js";
 
 export type GamesTab = "owned" | "recent" | "top";
@@ -11,7 +12,8 @@ export type GamesTab = "owned" | "recent" | "top";
 export interface DashboardSummary {
   totalGames: number;
   totalMinutes: number;
-  totalPriceJpy: number;
+  totalPriceAmount: number;
+  priceCurrency: string;
   lastSyncAt: string | null;
   recent30Minutes: number;
   dataSource: { official: number; corrected: number; "manual-only": number };
@@ -24,12 +26,24 @@ export interface DashboardCharts {
 
 export interface ListedGame {
   id: string;
+  externalId: string;
   title: string;
   coverUrl: string | null;
   ownedAt: string | null;
   lastPlayedAt: string | null;
-  priceJpy: number | null;
+  priceAmount: number | null;
+  priceCurrency: string;
   effectivePlaytime: EffectivePlaytime;
+}
+
+export interface GameDetail extends ListedGame {
+  description: string | null;
+  publisher: string | null;
+  releaseDate: string | null;
+  storeUrl: string | null;
+  platform: "Switch";
+  region: "JP" | "GLOBAL" | "UNKNOWN";
+  corrections: PlaytimeCorrection[];
 }
 
 export interface PlaytimeService {
@@ -41,6 +55,8 @@ export interface PlaytimeService {
     cursor?: string;
     limit?: number;
   }): Promise<{ items: ListedGame[]; nextCursor: string | null }>;
+  getGameDetail(userId: string, gameId: string): Promise<GameDetail | null>;
+  addGameToLibrary(input: { userId: string; externalId: string }): Promise<GameDetail>;
   listCorrections(userId: string, gameId?: string): Promise<PlaytimeCorrection[]>;
   createCorrection(input: {
     userId: string;
@@ -62,7 +78,7 @@ function withinLastDays(timestamp: string | null, days: number): boolean {
   return Date.parse(timestamp) >= cutoff;
 }
 
-export function createPlaytimeService(repository: Repository): PlaytimeService {
+export function createPlaytimeService(repository: Repository, catalogService: CatalogService): PlaytimeService {
   async function buildEffectiveMap(userId: string): Promise<{
     games: Awaited<ReturnType<Repository["listGamesByUserId"]>>;
     effectiveMap: Record<string, EffectivePlaytime>;
@@ -107,6 +123,23 @@ export function createPlaytimeService(repository: Repository): PlaytimeService {
     };
   }
 
+  function mapListedGame(
+    game: Awaited<ReturnType<Repository["listGamesByUserId"]>>[number],
+    effectiveMap: Record<string, EffectivePlaytime>
+  ): ListedGame {
+    return {
+      id: game.id,
+      externalId: game.externalId,
+      title: game.title,
+      coverUrl: game.coverUrl,
+      ownedAt: game.ownedAt,
+      lastPlayedAt: game.lastPlayedAt,
+      priceAmount: game.priceJpy,
+      priceCurrency: "USD",
+      effectivePlaytime: effectiveMap[game.id]
+    };
+  }
+
   return {
     async getDashboardSummary(userId: string) {
       const [state, account] = await Promise.all([
@@ -118,7 +151,7 @@ export function createPlaytimeService(repository: Repository): PlaytimeService {
         (acc, game) => acc + (state.effectiveMap[game.id]?.totalMinutes ?? 0),
         0
       );
-      const totalPriceJpy = state.games.reduce((acc, game) => acc + (game.priceJpy ?? 0), 0);
+      const totalPriceAmount = state.games.reduce((acc, game) => acc + (game.priceJpy ?? 0), 0);
       const recent30Minutes = state.games
         .filter((game) => withinLastDays(game.lastPlayedAt, 30))
         .reduce((acc, game) => acc + (state.effectiveMap[game.id]?.totalMinutes ?? 0), 0);
@@ -128,14 +161,18 @@ export function createPlaytimeService(repository: Repository): PlaytimeService {
         "manual-only": 0
       };
       for (const game of state.games) {
-        const source = state.effectiveMap[game.id]?.source ?? "official";
+        const source = (state.effectiveMap[game.id]?.source ?? "official") as
+          | "official"
+          | "corrected"
+          | "manual-only";
         mutableSource[source] += 1;
       }
 
       return {
         totalGames,
         totalMinutes,
-        totalPriceJpy,
+        totalPriceAmount,
+        priceCurrency: "USD",
         lastSyncAt: account?.lastSyncAt ?? null,
         recent30Minutes,
         dataSource: mutableSource
@@ -189,19 +226,80 @@ export function createPlaytimeService(repository: Repository): PlaytimeService {
 
       const page = sorted.slice(offset, offset + limit);
       const nextOffset = offset + limit < sorted.length ? offset + limit : null;
-      const items = page.map((game) => ({
-        id: game.id,
-        title: game.title,
-        coverUrl: game.coverUrl,
-        ownedAt: game.ownedAt,
-        lastPlayedAt: game.lastPlayedAt,
-        priceJpy: game.priceJpy,
-        effectivePlaytime: state.effectiveMap[game.id]
-      }));
+      const items = page.map((game) => mapListedGame(game, state.effectiveMap));
       return {
         items,
         nextCursor: nextOffset === null ? null : encodeCursor(nextOffset)
       };
+    },
+
+    async getGameDetail(userId: string, gameId: string) {
+      const [state, game] = await Promise.all([
+        buildEffectiveMap(userId),
+        repository.getGameById(userId, gameId)
+      ]);
+      if (!game) return null;
+
+      const [catalogGame, corrections] = await Promise.all([
+        catalogService.getCatalogGame(game.externalId),
+        repository.listCorrectionsByUserId(userId, game.id)
+      ]);
+
+      return {
+        ...mapListedGame(game, state.effectiveMap),
+        description: catalogGame?.description ?? null,
+        publisher: catalogGame?.publisher ?? null,
+        releaseDate: catalogGame?.releaseDate ?? null,
+        storeUrl: catalogGame?.storeUrl ?? null,
+        platform: game.platform,
+        region: game.region,
+        corrections: corrections.map((row) => ({
+          id: row.id,
+          userId: row.userId,
+          gameId: row.gameId,
+          type: row.type,
+          minutes: row.minutes,
+          reason: row.reason,
+          createdAt: row.createdAt,
+          revokedAt: row.revokedAt
+        }))
+      };
+    },
+
+    async addGameToLibrary(input: { userId: string; externalId: string }) {
+      const catalogGame = await catalogService.getCatalogGame(input.externalId);
+      if (!catalogGame) {
+        throw new Error("Catalog game not found");
+      }
+
+      const now = new Date().toISOString();
+      const game = await repository.upsertGame({
+        userId: input.userId,
+        externalId: catalogGame.externalId,
+        title: catalogGame.title,
+        coverUrl: catalogGame.coverUrl,
+        region: "GLOBAL",
+        platform: "Switch",
+        priceJpy: catalogGame.priceAmount,
+        ownedAt: now,
+        lastPlayedAt: null
+      });
+
+      await repository.insertAuditLog({
+        userId: input.userId,
+        action: "game_added_to_library",
+        details: {
+          gameId: game.id,
+          externalId: catalogGame.externalId
+        },
+        createdAt: now
+      });
+
+      const detail = await this.getGameDetail(input.userId, game.id);
+      if (!detail) {
+        throw new Error("Game detail unavailable");
+      }
+      return detail;
     },
 
     async listCorrections(userId: string, gameId?: string) {

@@ -12,6 +12,7 @@ import { createSyncRouter } from "./routes/sync.js";
 import { createDashboardRouter } from "./routes/dashboard.js";
 import { createGamesRouter } from "./routes/games.js";
 import { createCorrectionsRouter } from "./routes/corrections.js";
+import { createCatalogRouter } from "./routes/catalog.js";
 
 export async function createApp(input?: {
   deps?: AppDependencies;
@@ -47,6 +48,7 @@ export async function createApp(input?: {
   const dashboardRouter = createDashboardRouter(deps);
   const gamesRouter = createGamesRouter(deps);
   const correctionsRouter = createCorrectionsRouter(deps);
+  const catalogRouter = createCatalogRouter(deps);
 
   app.use(root.routes()).use(root.allowedMethods());
   app.use(authRouter.routes()).use(authRouter.allowedMethods());
@@ -55,6 +57,7 @@ export async function createApp(input?: {
   app.use(dashboardRouter.routes()).use(dashboardRouter.allowedMethods());
   app.use(gamesRouter.routes()).use(gamesRouter.allowedMethods());
   app.use(correctionsRouter.routes()).use(correctionsRouter.allowedMethods());
+  app.use(catalogRouter.routes()).use(catalogRouter.allowedMethods());
 
   return { app, deps };
 }
