@@ -6,6 +6,8 @@ import type {
   CatalogLocalizationsRow,
   CorrectionRow,
   GameRow,
+  GameRatingRow,
+  GameRatingSummaryRow,
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
@@ -95,6 +97,16 @@ export interface Repository {
   }): Promise<CorrectionRow>;
   listCorrectionsByUserId(userId: string, gameId?: string): Promise<CorrectionRow[]>;
   revokeCorrection(userId: string, correctionId: string, revokedAt: string): Promise<CorrectionRow | null>;
+  getGameRatingSnapshot(
+    userId: string,
+    externalId: string
+  ): Promise<{ userRating: GameRatingRow | null; summary: GameRatingSummaryRow | null }>;
+  upsertGameRating(input: {
+    userId: string;
+    externalId: string;
+    score: number;
+    now: string;
+  }): Promise<{ userRating: GameRatingRow; summary: GameRatingSummaryRow }>;
 
   createSyncJob(input: {
     userId: string;

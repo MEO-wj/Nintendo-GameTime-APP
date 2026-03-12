@@ -47,90 +47,140 @@ const FEATURED_CATALOG_SEEDS: CatalogSeedEntry[] = [
     externalId: "the-legend-of-zelda-breath-of-the-wild-switch",
     title: "The Legend of Zelda: Breath of the Wild",
     storeUrl: "https://www.nintendo.com/us/store/products/the-legend-of-zelda-breath-of-the-wild-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1r7h.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000000025/7137262b5a64d921e193653f8aa0b722925abc5680380ca0e18a5cfd91697f58",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "super-mario-odyssey-switch",
     title: "Super Mario Odyssey",
     storeUrl: "https://www.nintendo.com/us/store/products/super-mario-odyssey-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1mxf.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000001130/c42553b4fd0312c31e70ec7468c6c9bccd739f340152925b9600631f2d29f8b5",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "mario-kart-8-deluxe-switch",
     title: "Mario Kart 8 Deluxe",
     storeUrl: "https://www.nintendo.com/us/store/products/mario-kart-8-deluxe-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2lb5.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000000153/de697f487a36d802dd9a5ff0341f717c8486221f2f1219b675af37aca63bc453",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "luigis-mansion-3-switch",
     title: "Luigi's Mansion 3",
     storeUrl: "https://www.nintendo.com/us/store/products/luigis-mansion-3-switch/",
-    fallbackCoverUrl: "https://assets.nintendo.com/image/upload/b_auto,c_pad,dpr_2.0,f_auto,q_auto,w_300/b_rgb:ffffff/v1/store/software/switch/70010000001620/2b166fb3197dacfde1d939acd6a976b9fbe3b1a32c54f9f0d2c8d23efb22412d",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000001620/2b166fb3197dacfde1d939acd6a976b9fbe3b1a32c54f9f0d2c8d23efb22412d",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "super-mario-3d-world-plus-bowsers-fury-switch",
     title: "Super Mario 3D World + Bowser's Fury",
     storeUrl: "https://www.nintendo.com/us/store/products/super-mario-3d-world-plus-bowsers-fury-switch/",
-    fallbackCoverUrl: "https://assets.nintendo.com/image/upload/b_auto,c_pad,dpr_2.0,f_auto,q_auto,w_300/b_rgb:ffffff/v1/store/software/switch/70010000034439/ccb69a8bf2746b2dc0a9b11a9e48c9893baa1631486326f0d681b7a36385221f",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000034439/ccb69a8bf2746b2dc0a9b11a9e48c9893baa1631486326f0d681b7a36385221f",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "animal-crossing-new-horizons-switch",
     title: "Animal Crossing: New Horizons",
     storeUrl: "https://www.nintendo.com/us/store/products/animal-crossing-new-horizons-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co5vmg.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000027619/9989957eae3a6b545194c42fec2071675c34aadacd65e6b33fdfe7b3b6a86c3a",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "hollow-knight-switch",
     title: "Hollow Knight",
     storeUrl: "https://www.nintendo.com/us/store/products/hollow-knight-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co2x4w.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000003208/4643fb058642335c523910f3a7910575f56372f612f7c0c9a497aaae978d3e51",
     fallbackPriceAmount: 15
   },
   {
     externalId: "dead-cells-switch",
     title: "Dead Cells",
     storeUrl: "https://www.nintendo.com/us/store/products/dead-cells-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co1q7d.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000007706/bb0e6f620098683ff06d306700a18c945adbcc897aa4cc65f41f97dd69621745",
     fallbackPriceAmount: 24.99
   },
   {
     externalId: "kirby-and-the-forgotten-land-switch",
     title: "Kirby and the Forgotten Land",
     storeUrl: "https://www.nintendo.com/us/store/products/kirby-and-the-forgotten-land-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co6j0z.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000046405/d1cf83dea46094b85247f40ca30ea4557730a319be0bfe544a4fa929144cf6c2",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "splatoon-3-switch",
     title: "Splatoon 3",
     storeUrl: "https://www.nintendo.com/us/store/products/splatoon-3-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co6lbc.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000046395/94a4095cda06c4d85c637d1af451979f9933302b6b17174d97c45de7a68584a2",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "metroid-dread-switch",
     title: "Metroid Dread",
     storeUrl: "https://www.nintendo.com/us/store/products/metroid-dread-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co3xz9.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000042924/4f2c683f0196210ec212a2ab8bf6952223c0b88e827b820953407a2ba61c9cb2",
     fallbackPriceAmount: 59.99
   },
   {
     externalId: "pikmin-4-switch",
     title: "Pikmin 4",
     storeUrl: "https://www.nintendo.com/us/store/products/pikmin-4-switch/",
-    fallbackCoverUrl: "https://images.igdb.com/igdb/image/upload/t_cover_big/co7b7r.jpg",
+    fallbackCoverUrl:
+      "https://assets.nintendo.com/image/upload/q_auto/f_auto/store/software/switch/70010000005308/43af89ed5bd76ac5ec6b367b4b53092f8bf94a1d1312fdfc1d4664329fd5077b",
     fallbackPriceAmount: 59.99
   }
 ];
 
-function buildNintendoProductUrl(externalId: string): string {
+const CATALOG_IMPORT_BATCH_SIZE = 8;
+
+const OFFICIAL_PRODUCT_URL_OVERRIDES: Record<string, string> = {
+  "cadence-of-hyrule-switch":
+    "https://www.nintendo.com/us/store/products/cadence-of-hyrule-crypt-of-the-necrodancer-featuring-the-legend-of-zelda-switch/",
+  "super-mario-3d-all-stars-switch":
+    "https://www.nintendo.com/fr-fr/fr-fr/Jeux/Jeux-Nintendo-Switch/Super-Mario-3D-All-Stars-1832369.html"
+};
+
+function buildLegacyNintendoProductUrl(externalId: string): string {
   return `https://www.nintendo.com/us/store/products/${externalId}/`;
+}
+
+function buildNintendoProductSlug(title: string): string {
+  return title
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[’']/g, "")
+    .replace(/&/g, " and ")
+    .replace(/\+/g, " plus ")
+    .replace(/#/g, " ")
+    .replace(/[!:.,?()[\]/]/g, " ")
+    .replace(/™|®/g, " ")
+    .replace(/[^a-zA-Z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+}
+
+function buildNintendoProductUrlFromTitle(title: string): string {
+  return `https://www.nintendo.com/us/store/products/${buildNintendoProductSlug(title)}-switch/`;
+}
+
+function getProductCandidateUrls(seed: CatalogSeedEntry): string[] {
+  return [
+    OFFICIAL_PRODUCT_URL_OVERRIDES[seed.externalId],
+    seed.storeUrl,
+    buildNintendoProductUrlFromTitle(seed.title),
+    buildLegacyNintendoProductUrl(seed.externalId)
+  ].filter((value, index, input): value is string => Boolean(value) && input.indexOf(value) === index);
 }
 
 function wrapPlaceholderTitle(title: string): string[] {
@@ -198,7 +248,7 @@ const CATALOG_SEEDS: CatalogSeedEntry[] = [
   ...EXTENDED_CATALOG_SEEDS.map((entry) => ({
     externalId: entry.externalId,
     title: entry.title,
-    storeUrl: buildNintendoProductUrl(entry.externalId),
+    storeUrl: OFFICIAL_PRODUCT_URL_OVERRIDES[entry.externalId] ?? buildNintendoProductUrlFromTitle(entry.title),
     fallbackCoverUrl: null,
     fallbackPriceAmount: entry.fallbackPriceAmount
   }))
@@ -296,7 +346,10 @@ Object.assign(CATALOG_LOCALIZATIONS, CATALOG_LOCALIZATION_OVERRIDES);
 interface CachedCatalogItem {
   expiresAt: number;
   value: CatalogGame;
+  hydrated: boolean;
 }
+
+const STATIC_CATALOG_SOFT_TIMEOUT_MS = 350;
 
 interface JsonLdProduct {
   title: string | null;
@@ -329,6 +382,17 @@ function normalizeText(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function hasTitleSignal(candidate: string | null, expected: string): boolean {
+  if (!candidate) return false;
+  const ignoredTokens = new Set(["the", "a", "an", "of", "and", "edition", "deluxe", "switch"]);
+  const candidateTokens = new Set(normalizeText(candidate).split(" ").filter(Boolean));
+  const expectedTokens = normalizeText(expected)
+    .split(" ")
+    .filter((token) => token && !ignoredTokens.has(token));
+  const overlap = expectedTokens.filter((token) => candidateTokens.has(token)).length;
+  return overlap >= Math.min(2, expectedTokens.length);
+}
+
 function encodeCursor(offset: number): string {
   return Buffer.from(String(offset), "utf8").toString("base64url");
 }
@@ -351,6 +415,69 @@ function toAbsoluteUrl(value: string | null, fallback: string): string {
   } catch {
     return fallback;
   }
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .trim();
+}
+
+function extractMetaContent(html: string, attr: "property" | "name", key: string): string | null {
+  const doubleQuoted = new RegExp(
+    `<meta[^>]+${attr}=["']${key}["'][^>]+content=["']([^"']+)["'][^>]*>`,
+    "i"
+  );
+  const reverseDoubleQuoted = new RegExp(
+    `<meta[^>]+content=["']([^"']+)["'][^>]+${attr}=["']${key}["'][^>]*>`,
+    "i"
+  );
+  const match = html.match(doubleQuoted) ?? html.match(reverseDoubleQuoted);
+  return match?.[1] ? decodeHtmlEntities(match[1]) : null;
+}
+
+function extractCanonicalUrl(html: string): string | null {
+  const match = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["'][^>]*>/i);
+  return match?.[1] ? decodeHtmlEntities(match[1]) : null;
+}
+
+function sanitizeMetaTitle(value: string | null): string | null {
+  if (!value) return null;
+  const sanitized = value
+    .split(" | ")[0]
+    .replace(/\s+-\s+Nintendo.*$/i, "")
+    .trim();
+  return sanitized || value.trim();
+}
+
+function parseMetaProduct(html: string, fallbackUrl: string): JsonLdProduct | null {
+  const title = sanitizeMetaTitle(extractMetaContent(html, "property", "og:title"));
+  const description =
+    extractMetaContent(html, "property", "og:description") ?? extractMetaContent(html, "name", "description");
+  const coverUrl = extractMetaContent(html, "property", "og:image");
+  const storeUrl = extractMetaContent(html, "property", "og:url") ?? extractCanonicalUrl(html) ?? fallbackUrl;
+  const publisher =
+    extractMetaContent(html, "property", "og:site_name") ??
+    (storeUrl.includes("nintendo.com") ? "Nintendo" : null);
+
+  if (!title && !description && !coverUrl) {
+    return null;
+  }
+
+  return {
+    title,
+    description,
+    coverUrl,
+    storeUrl,
+    priceAmount: null,
+    priceCurrency: null,
+    publisher,
+    releaseDate: null
+  };
 }
 
 function parseJsonLdProduct(html: string): JsonLdProduct | null {
@@ -418,45 +545,50 @@ function buildFallbackCatalogGame(seed: CatalogSeedEntry): CatalogGame {
 
 async function resolveCatalogGame(seed: CatalogSeedEntry): Promise<CatalogGame> {
   const fallback = buildFallbackCatalogGame(seed);
+  const candidateUrls = getProductCandidateUrls(seed);
 
-  if (!seed.storeUrl.includes("/store/products/")) {
-    return fallback;
-  }
-
-  try {
-    const response = await fetch(seed.storeUrl, {
-      signal: AbortSignal.timeout(8000),
-      headers: {
-        "User-Agent": "NintendoGameTime/1.0"
+  for (const candidateUrl of candidateUrls) {
+    try {
+      const response = await fetch(candidateUrl, {
+        signal: AbortSignal.timeout(8000),
+        headers: {
+          "User-Agent": "NintendoGameTime/1.0"
+        }
+      });
+      if (!response.ok) {
+        continue;
       }
-    });
-    if (!response.ok) {
-      return fallback;
-    }
 
-    const html = await response.text();
-    const parsed = parseJsonLdProduct(html);
-    if (!parsed) {
-      return fallback;
-    }
+      const html = await response.text();
+      const parsed = parseJsonLdProduct(html) ?? parseMetaProduct(html, candidateUrl);
+      if (!parsed) {
+        continue;
+      }
+      const titleMatches = hasTitleSignal(parsed.title, fallback.title);
+      if (parsed.title && !titleMatches) {
+        continue;
+      }
 
-    return {
-      externalId: seed.externalId,
-      title: parsed.title ?? fallback.title,
-      coverUrl: parsed.coverUrl ?? fallback.coverUrl,
-      storeUrl: toAbsoluteUrl(parsed.storeUrl, fallback.storeUrl),
-      description: parsed.description ?? fallback.description,
-      publisher: parsed.publisher ?? fallback.publisher,
-      releaseDate: parsed.releaseDate ?? fallback.releaseDate,
-      priceAmount: parsed.priceAmount ?? fallback.priceAmount,
-      priceCurrency: parsed.priceCurrency ?? fallback.priceCurrency,
-      platform: "Switch",
-      region: "GLOBAL",
-      localizations: fallback.localizations
-    };
-  } catch {
-    return fallback;
+      return {
+        externalId: seed.externalId,
+        title: titleMatches ? parsed.title ?? fallback.title : fallback.title,
+        coverUrl: parsed.coverUrl ?? fallback.coverUrl,
+        storeUrl: toAbsoluteUrl(parsed.storeUrl, candidateUrl),
+        description: parsed.description ?? fallback.description,
+        publisher: parsed.publisher ?? fallback.publisher,
+        releaseDate: parsed.releaseDate ?? fallback.releaseDate,
+        priceAmount: parsed.priceAmount ?? fallback.priceAmount,
+        priceCurrency: parsed.priceCurrency ?? fallback.priceCurrency,
+        platform: "Switch",
+        region: "GLOBAL",
+        localizations: fallback.localizations
+      };
+    } catch {
+      continue;
+    }
   }
+
+  return fallback;
 }
 
 export function getCatalogSeeds(): CatalogSeedEntry[] {
@@ -483,11 +615,28 @@ function mapCatalogRowToGame(row: CatalogGameRow): CatalogGame {
 function createStaticCatalogService(): CatalogService {
   const cache = new Map<string, CachedCatalogItem>();
   const inflight = new Map<string, Promise<CatalogGame>>();
+  const queuedRefreshes = new Set<string>();
+  const seedByExternalId = new Map(CATALOG_SEEDS.map((seed) => [seed.externalId, seed] as const));
 
-  async function loadSeed(seed: CatalogSeedEntry): Promise<CatalogGame> {
+  function getOrCreateFallback(seed: CatalogSeedEntry): CatalogGame {
     const cached = cache.get(seed.externalId);
-    if (cached && cached.expiresAt > Date.now()) {
+    if (cached) {
       return cached.value;
+    }
+
+    const fallback = buildFallbackCatalogGame(seed);
+    cache.set(seed.externalId, {
+      value: fallback,
+      expiresAt: 0,
+      hydrated: false
+    });
+    return fallback;
+  }
+
+  function scheduleSeedRefresh(seed: CatalogSeedEntry): Promise<CatalogGame> {
+    const cached = cache.get(seed.externalId);
+    if (cached?.hydrated && cached.expiresAt > Date.now()) {
+      return Promise.resolve(cached.value);
     }
 
     const existing = inflight.get(seed.externalId);
@@ -499,7 +648,8 @@ function createStaticCatalogService(): CatalogService {
       .then((value) => {
         cache.set(seed.externalId, {
           value,
-          expiresAt: Date.now() + CACHE_TTL_MS
+          expiresAt: Date.now() + CACHE_TTL_MS,
+          hydrated: true
         });
         inflight.delete(seed.externalId);
         return value;
@@ -512,6 +662,68 @@ function createStaticCatalogService(): CatalogService {
     inflight.set(seed.externalId, promise);
     return promise;
   }
+
+  async function loadSeed(seed: CatalogSeedEntry): Promise<CatalogGame> {
+    const cached = cache.get(seed.externalId);
+    if (cached?.hydrated && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+
+    const fallback = getOrCreateFallback(seed);
+    const refreshPromise = scheduleSeedRefresh(seed).catch(() => fallback);
+
+    return Promise.race([
+      refreshPromise,
+      new Promise<CatalogGame>((resolve) => {
+        setTimeout(() => resolve(fallback), STATIC_CATALOG_SOFT_TIMEOUT_MS);
+      })
+    ]);
+  }
+
+  function peekSeed(seed: CatalogSeedEntry): CatalogGame {
+    const cached = cache.get(seed.externalId);
+    if (cached) {
+      if (!cached.hydrated || cached.expiresAt <= Date.now()) {
+        enqueueSeedRefresh(seed);
+      }
+      return cached.value;
+    }
+
+    const fallback = getOrCreateFallback(seed);
+    enqueueSeedRefresh(seed);
+    return fallback;
+  }
+
+  async function warmCatalogInBackground(): Promise<void> {
+    for (let index = 0; index < CATALOG_SEEDS.length; index += CATALOG_IMPORT_BATCH_SIZE) {
+      const batch = CATALOG_SEEDS.slice(index, index + CATALOG_IMPORT_BATCH_SIZE);
+      await Promise.all(batch.map((seed) => scheduleSeedRefresh(seed).catch(() => getOrCreateFallback(seed))));
+    }
+  }
+
+  function enqueueSeedRefresh(seed: CatalogSeedEntry): void {
+    const cached = cache.get(seed.externalId);
+    if (cached?.hydrated && cached.expiresAt > Date.now()) {
+      return;
+    }
+    if (inflight.has(seed.externalId) || queuedRefreshes.has(seed.externalId)) {
+      return;
+    }
+
+    queuedRefreshes.add(seed.externalId);
+    setTimeout(() => {
+      queuedRefreshes.delete(seed.externalId);
+      void scheduleSeedRefresh(seed).catch(() => undefined);
+    }, 0);
+  }
+
+  for (const seed of CATALOG_SEEDS) {
+    getOrCreateFallback(seed);
+  }
+
+  setTimeout(() => {
+    void warmCatalogInBackground().catch(() => undefined);
+  }, 0);
 
   return {
     async listCatalog(input) {
@@ -526,7 +738,7 @@ function createStaticCatalogService(): CatalogService {
         : CATALOG_SEEDS;
 
       const pageSeeds = filteredSeeds.slice(offset, offset + limit);
-      const items = await Promise.all(pageSeeds.map((seed) => loadSeed(seed)));
+      const items = pageSeeds.map((seed) => peekSeed(seed));
       const nextOffset = offset + limit < filteredSeeds.length ? offset + limit : null;
 
       return {
@@ -537,7 +749,7 @@ function createStaticCatalogService(): CatalogService {
     },
 
     async getCatalogGame(externalId: string) {
-      const seed = CATALOG_SEEDS.find((entry) => entry.externalId === externalId);
+      const seed = seedByExternalId.get(externalId);
       if (!seed) return null;
       return loadSeed(seed);
     },
@@ -552,6 +764,12 @@ function createStaticCatalogService(): CatalogService {
 
     async refreshCatalog() {
       cache.clear();
+      for (const seed of CATALOG_SEEDS) {
+        getOrCreateFallback(seed);
+      }
+      setTimeout(() => {
+        void warmCatalogInBackground().catch(() => undefined);
+      }, 0);
       return {
         importedCount: 0,
         totalCount: CATALOG_SEEDS.length,
@@ -570,7 +788,13 @@ function createStaticCatalogService(): CatalogService {
 
 async function importCatalogSeeds(repository: Repository): Promise<CatalogRefreshResult> {
   const refreshedAt = new Date().toISOString();
-  const resolvedGames = await Promise.all(CATALOG_SEEDS.map((seed) => resolveCatalogGame(seed)));
+  const resolvedGames: CatalogGame[] = [];
+
+  for (let index = 0; index < CATALOG_SEEDS.length; index += CATALOG_IMPORT_BATCH_SIZE) {
+    const batch = CATALOG_SEEDS.slice(index, index + CATALOG_IMPORT_BATCH_SIZE);
+    const batchResolved = await Promise.all(batch.map((seed) => resolveCatalogGame(seed)));
+    resolvedGames.push(...batchResolved);
+  }
 
   for (const [index, catalogGame] of resolvedGames.entries()) {
     await repository.upsertCatalogGame({

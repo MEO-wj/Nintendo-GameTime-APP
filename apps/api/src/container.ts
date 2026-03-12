@@ -32,8 +32,11 @@ export async function createAppDependencies(
     ? options.repository
     : (repositoryContext = await createRepository(env)).repository;
 
-  const catalogService = createCatalogService(repository);
-  await catalogService.ensureCatalogSeeded();
+  const useStaticCatalogService = env.STORAGE_MODE === "memory";
+  const catalogService = useStaticCatalogService ? createCatalogService() : createCatalogService(repository);
+  if (!useStaticCatalogService) {
+    await catalogService.ensureCatalogSeeded();
+  }
   const marketService = createMarketService();
   const nintendoClient = createNintendoClient(env);
   const alertService = new ConsoleAlertService();

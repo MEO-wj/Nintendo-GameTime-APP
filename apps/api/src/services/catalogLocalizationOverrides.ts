@@ -26,15 +26,34 @@ export const CATALOG_LOCALIZATION_OVERRIDES: Record<string, CatalogLocalizations
     "萨尔达传说 智慧的再现",
     "这一次由萨尔达公主踏上旅程，借助复制与组合“回响”的力量，拯救被异变吞噬的海拉鲁。"
   ),
-  "hyrule-warriors-definitive-edition-switch": zh("ZELDA无双 海拉鲁全明星 DX"),
-  "hyrule-warriors-age-of-calamity-switch": zh("ZELDA无双 灾厄启示录"),
+  "hyrule-warriors-definitive-edition-switch": zh(
+    "ZELDA无双 海拉鲁全明星 DX",
+    "收录《萨尔达传说》系列多位角色的爽快动作作品，在海拉鲁大陆上以无双式战斗横扫大军，并串联起多个经典世界观。"
+  ),
+  "hyrule-warriors-age-of-calamity-switch": zh(
+    "ZELDA无双 灾厄启示录",
+    "回到《萨尔达传说 旷野之息》一百年前的灾厄时代，操控英杰与林克并肩作战，亲历大战爆发前后的关键时刻。"
+  ),
+  "cadence-of-hyrule-switch": zh(
+    "凯登丝勇闯海拉鲁",
+    "在节奏驱动的地牢冒险中踏入海拉鲁，跟随音乐节拍移动、战斗与探索，与林克和萨尔达一起阻止邪恶势力。"
+  ),
   "super-mario-bros-wonder-switch": zh(
     "超级玛利欧兄弟 惊奇",
     "在花花王国展开横向卷轴新冒险，惊奇花会让关卡发生不可思议的变化，带来充满变化的全新游玩体验。"
   ),
-  "super-mario-3d-all-stars-switch": zh("超级玛利欧 3D 收藏辑"),
-  "new-super-mario-bros-u-deluxe-switch": zh("New 超级玛利欧兄弟 U 豪华版"),
-  "super-mario-maker-2-switch": zh("超级玛利欧创作家 2"),
+  "super-mario-3d-all-stars-switch": zh(
+    "超级玛利欧 3D 收藏辑",
+    "一次收录《超级玛利欧64》《超级玛利欧阳光》和《超级玛利欧银河》三款 3D 名作，回顾玛利欧立体冒险的经典旅程。"
+  ),
+  "new-super-mario-bros-u-deluxe-switch": zh(
+    "New 超级玛利欧兄弟 U 豪华版",
+    "把《New 超级玛利欧兄弟 U》与《New 超级路易吉 U》合并收录，支持多人同乐，以传统横向卷轴关卡展开热闹冒险。"
+  ),
+  "super-mario-maker-2-switch": zh(
+    "超级玛利欧创作家 2",
+    "亲手设计属于自己的玛利欧关卡，并游玩来自全球玩家的创意作品，体验创作与闯关结合的高自由度玩法。"
+  ),
   "paper-mario-the-origami-king-switch": zh(
     "纸片玛利欧 折纸国王",
     "和伙伴一起踏上纸片风格的冒险，解开折纸王国的谜团，在独特的回合制环形战斗中拯救世界。"
@@ -47,7 +66,10 @@ export const CATALOG_LOCALIZATION_OVERRIDES: Record<string, CatalogLocalizations
     "碧姬公主 表演时刻！",
     "碧姬公主在舞台剧世界中变换不同职业形态，以剑士、侦探、甜点师等姿态解决各式各样的事件。"
   ),
-  "captain-toad-treasure-tracker-switch": zh("前进！奇诺比奥队长"),
+  "captain-toad-treasure-tracker-switch": zh(
+    "前进！奇诺比奥队长",
+    "操控不能跳跃的奇诺比奥队长穿梭立体箱庭关卡，旋转场景、寻找宝石与隐藏路线，破解轻巧有趣的机关谜题。"
+  ),
   "super-mario-party-switch": zh("超级玛利欧派对"),
   "mario-party-superstars-switch": zh("玛利欧派对 超级巨星"),
   "mario-tennis-aces-switch": zh("玛利欧网球 王牌高手"),

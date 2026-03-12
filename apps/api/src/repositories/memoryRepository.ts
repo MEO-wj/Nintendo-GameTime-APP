@@ -8,6 +8,8 @@ import type {
   CatalogLocalizationsRow,
   CorrectionRow,
   GameRow,
+  GameRatingRow,
+  GameRatingSummaryRow,
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
@@ -25,6 +27,8 @@ export class MemoryRepository implements Repository {
   private catalogGames = new Map<string, CatalogGameRow>();
   private snapshots = new Map<string, OfficialSnapshotRow>();
   private corrections = new Map<string, CorrectionRow>();
+  private gameRatings = new Map<string, GameRatingRow>();
+  private gameRatingSummaries = new Map<string, GameRatingSummaryRow>();
   private syncJobs = new Map<string, SyncJobRow>();
   private auditLogs = new Map<string, AuditLogRow>();
 
@@ -374,6 +378,50 @@ export class MemoryRepository implements Repository {
     row.revokedAt = revokedAt;
     this.corrections.set(row.id, row);
     return row;
+  }
+
+  async getGameRatingSnapshot(userId: string, externalId: string) {
+    const userRating =
+      [...this.gameRatings.values()].find((entry) => entry.userId === userId && entry.externalId === externalId) ?? null;
+    const summary = this.gameRatingSummaries.get(externalId) ?? null;
+    return { userRating, summary };
+  }
+
+  async upsertGameRating(input: { userId: string; externalId: string; score: number; now: string }) {
+    const existing =
+      [...this.gameRatings.values()].find((entry) => entry.userId === input.userId && entry.externalId === input.externalId) ??
+      null;
+    const summary = this.gameRatingSummaries.get(input.externalId) ?? {
+      externalId: input.externalId,
+      ratingCount: 0,
+      ratingTotal: 0,
+      updatedAt: input.now
+    };
+
+    if (existing) {
+      summary.ratingTotal += input.score - existing.score;
+      summary.updatedAt = input.now;
+      existing.score = input.score;
+      existing.updatedAt = input.now;
+      this.gameRatings.set(existing.id, existing);
+      this.gameRatingSummaries.set(summary.externalId, summary);
+      return { userRating: existing, summary };
+    }
+
+    const row: GameRatingRow = {
+      id: randomUUID(),
+      userId: input.userId,
+      externalId: input.externalId,
+      score: input.score,
+      createdAt: input.now,
+      updatedAt: input.now
+    };
+    summary.ratingCount += 1;
+    summary.ratingTotal += input.score;
+    summary.updatedAt = input.now;
+    this.gameRatings.set(row.id, row);
+    this.gameRatingSummaries.set(summary.externalId, summary);
+    return { userRating: row, summary };
   }
 
   async createSyncJob(input: {

@@ -17,6 +17,12 @@ const addToLibrarySchema = z.object({
   externalId: z.string().min(1)
 });
 
+const gameRatingSchema = z.object({
+  score: z.coerce.number().min(0.1).max(10).refine((value) => Number.isInteger(value * 10), {
+    message: "Score must use 0.1 increments"
+  })
+});
+
 export function createGamesRouter(deps: AppDependencies): Router {
   const router = new Router();
   const requireAuth = createAuthMiddleware(deps.env);
@@ -55,6 +61,39 @@ export function createGamesRouter(deps: AppDependencies): Router {
     }
 
     ctx.body = detail;
+  });
+
+  router.put("/api/games/:id/rating", requireAuth, async (ctx) => {
+    const parsedParams = gameParamsSchema.safeParse(ctx.params);
+    const parsedBody = gameRatingSchema.safeParse(ctx.request.body);
+    if (!parsedParams.success || !parsedBody.success) {
+      ctx.status = 400;
+      ctx.body = {
+        message: "Invalid payload",
+        issues: {
+          params: parsedParams.success ? undefined : parsedParams.error.flatten(),
+          body: parsedBody.success ? undefined : parsedBody.error.flatten()
+        }
+      };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    try {
+      const rating = await deps.playtimeService.rateGame({
+        userId: authUser.userId,
+        gameId: parsedParams.data.id,
+        score: parsedBody.data.score
+      });
+      ctx.body = { rating };
+    } catch (error) {
+      if (error instanceof Error && error.message === "Game not found") {
+        ctx.status = 404;
+        ctx.body = { message: error.message };
+        return;
+      }
+      throw error;
+    }
   });
 
   router.post("/api/games/library", requireAuth, async (ctx) => {

@@ -9,6 +9,7 @@ describe("API integration", () => {
   let appCallback: ReturnType<Awaited<ReturnType<typeof createApp>>["app"]["callback"]>;
   let token = "";
   let firstGameId = "";
+  let firstExternalId = "";
 
   beforeAll(async () => {
     const env = loadEnv({
@@ -65,6 +66,38 @@ describe("API integration", () => {
     expect(gamesRes.status).toBe(200);
     expect(gamesRes.body.items.length).toBeGreaterThan(0);
     firstGameId = gamesRes.body.items[0].id;
+    firstExternalId = gamesRes.body.items[0].externalId;
+
+    const ratingRes = await request(appCallback)
+      .put(`/api/games/${firstGameId}/rating`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ score: 8.4 });
+    expect(ratingRes.status).toBe(200);
+    expect(ratingRes.body.rating.userScore).toBe(8.4);
+    expect(ratingRes.body.rating.averageScore).toBe(8.4);
+    expect(ratingRes.body.rating.ratingCount).toBe(1);
+
+    const detailRes = await request(appCallback)
+      .get(`/api/games/${firstGameId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(detailRes.status).toBe(200);
+    expect(detailRes.body.playerRating.userScore).toBe(8.4);
+    expect(detailRes.body.playerRating.ratingCount).toBe(1);
+
+    const catalogDetailRes = await request(appCallback)
+      .get(`/api/catalog/games/${firstExternalId}`)
+      .set("Authorization", `Bearer ${token}`);
+    expect(catalogDetailRes.status).toBe(200);
+    expect(catalogDetailRes.body.criticScore).not.toBeUndefined();
+    expect(catalogDetailRes.body.playerRating.userScore).toBe(8.4);
+
+    const catalogRatingRes = await request(appCallback)
+      .put(`/api/catalog/games/${firstExternalId}/rating`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ score: 9.1 });
+    expect(catalogRatingRes.status).toBe(200);
+    expect(catalogRatingRes.body.rating.userScore).toBe(9.1);
+    expect(catalogRatingRes.body.rating.averageScore).toBe(9.1);
 
     const correctionRes = await request(appCallback)
       .post("/api/playtime/corrections")
@@ -83,5 +116,5 @@ describe("API integration", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(revokeRes.status).toBe(200);
     expect(revokeRes.body.correction.revokedAt).toBeTruthy();
-  });
+  }, 30000);
 });

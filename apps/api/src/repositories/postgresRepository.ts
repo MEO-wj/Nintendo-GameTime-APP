@@ -8,6 +8,8 @@ import type {
   CatalogLocalizationsRow,
   CorrectionRow,
   GameRow,
+  GameRatingRow,
+  GameRatingSummaryRow,
   NintendoAccount,
   OfficialSnapshotRow,
   SyncJobRow,
@@ -48,6 +50,26 @@ function mapCatalogGameRow(row: Record<string, unknown>): CatalogGameRow {
     localizations: asCatalogLocalizations(row.localizations),
     lastSyncedAt: asIso(String(row.last_synced_at)),
     createdAt: asIso(String(row.created_at)),
+    updatedAt: asIso(String(row.updated_at))
+  };
+}
+
+function mapGameRatingRow(row: Record<string, unknown>): GameRatingRow {
+  return {
+    id: String(row.id),
+    userId: String(row.user_id),
+    externalId: String(row.external_id),
+    score: Number(row.score),
+    createdAt: asIso(String(row.created_at)),
+    updatedAt: asIso(String(row.updated_at))
+  };
+}
+
+function mapGameRatingSummaryRow(row: Record<string, unknown>): GameRatingSummaryRow {
+  return {
+    externalId: String(row.external_id),
+    ratingCount: Number(row.rating_count),
+    ratingTotal: Number(row.rating_total),
     updatedAt: asIso(String(row.updated_at))
   };
 }
@@ -144,6 +166,21 @@ export class PostgresRepository implements Repository {
         revoked_at TIMESTAMPTZ NULL,
         deleted_at TIMESTAMPTZ NULL
       );
+      CREATE TABLE IF NOT EXISTS game_ratings (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        external_id TEXT NOT NULL,
+        score NUMERIC(4,1) NOT NULL CHECK (score BETWEEN 0.1 AND 10.0),
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL,
+        UNIQUE(user_id, external_id)
+      );
+      CREATE TABLE IF NOT EXISTS game_rating_summaries (
+        external_id TEXT PRIMARY KEY,
+        rating_count INT NOT NULL DEFAULT 0,
+        rating_total NUMERIC(10,1) NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS sync_jobs (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id),
@@ -163,6 +200,41 @@ export class PostgresRepository implements Repository {
         created_at TIMESTAMPTZ NOT NULL
       );
     `);
+
+    const scoreColumn = await this.pool.query<{ data_type: string }>(
+      `SELECT data_type
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'game_ratings' AND column_name = 'score'`
+    );
+    if (scoreColumn.rows[0]?.data_type === "integer") {
+      await this.pool.query(`
+        ALTER TABLE game_ratings
+        ALTER COLUMN score DROP DEFAULT,
+        ALTER COLUMN score TYPE NUMERIC(4,1) USING ROUND((score::numeric * 2), 1)
+      `);
+      await this.pool.query(`
+        ALTER TABLE game_ratings
+        DROP CONSTRAINT IF EXISTS game_ratings_score_check
+      `);
+      await this.pool.query(`
+        ALTER TABLE game_ratings
+        ADD CONSTRAINT game_ratings_score_check CHECK (score BETWEEN 0.1 AND 10.0)
+      `);
+    }
+
+    const totalColumn = await this.pool.query<{ data_type: string }>(
+      `SELECT data_type
+       FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'game_rating_summaries' AND column_name = 'rating_total'`
+    );
+    if (totalColumn.rows[0]?.data_type === "integer") {
+      await this.pool.query(`
+        ALTER TABLE game_rating_summaries
+        ALTER COLUMN rating_total DROP DEFAULT,
+        ALTER COLUMN rating_total TYPE NUMERIC(10,1) USING ROUND((rating_total::numeric * 2), 1),
+        ALTER COLUMN rating_total SET DEFAULT 0
+      `);
+    }
   }
 
   async upsertUserByEmail(email: string): Promise<User> {
@@ -818,6 +890,105 @@ export class PostgresRepository implements Repository {
       revokedAt: row.revoked_at ? asIso(row.revoked_at) : null,
       deletedAt: row.deleted_at ? asIso(row.deleted_at) : null
     };
+  }
+
+  async getGameRatingSnapshot(userId: string, externalId: string) {
+    const [userResult, summaryResult] = await Promise.all([
+      this.pool.query(
+        `SELECT id, user_id, external_id, score, created_at, updated_at
+         FROM game_ratings
+         WHERE user_id = $1 AND external_id = $2`,
+        [userId, externalId]
+      ),
+      this.pool.query(
+        `SELECT external_id, rating_count, rating_total, updated_at
+         FROM game_rating_summaries
+         WHERE external_id = $1`,
+        [externalId]
+      )
+    ]);
+
+    return {
+      userRating: userResult.rows[0] ? mapGameRatingRow(userResult.rows[0]) : null,
+      summary: summaryResult.rows[0] ? mapGameRatingSummaryRow(summaryResult.rows[0]) : null
+    };
+  }
+
+  async upsertGameRating(input: { userId: string; externalId: string; score: number; now: string }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      const existingResult = await client.query(
+        `SELECT id, user_id, external_id, score, created_at, updated_at
+         FROM game_ratings
+         WHERE user_id = $1 AND external_id = $2
+         FOR UPDATE`,
+        [input.userId, input.externalId]
+      );
+      const existing = existingResult.rows[0] ? mapGameRatingRow(existingResult.rows[0]) : null;
+
+      let userRating: GameRatingRow;
+      if (existing) {
+        await client.query(
+          `UPDATE game_ratings
+           SET score = $1, updated_at = $2
+           WHERE id = $3`,
+          [input.score, input.now, existing.id]
+        );
+        await client.query(
+          `UPDATE game_rating_summaries
+           SET rating_total = rating_total + $1, updated_at = $2
+           WHERE external_id = $3`,
+          [input.score - existing.score, input.now, input.externalId]
+        );
+        userRating = {
+          ...existing,
+          score: input.score,
+          updatedAt: input.now
+        };
+      } else {
+        const id = randomUUID();
+        await client.query(
+          `INSERT INTO game_ratings (id, user_id, external_id, score, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $5)`,
+          [id, input.userId, input.externalId, input.score, input.now]
+        );
+        await client.query(
+          `INSERT INTO game_rating_summaries (external_id, rating_count, rating_total, updated_at)
+           VALUES ($1, 1, $2, $3)
+           ON CONFLICT (external_id) DO UPDATE
+           SET rating_count = game_rating_summaries.rating_count + 1,
+               rating_total = game_rating_summaries.rating_total + EXCLUDED.rating_total,
+               updated_at = EXCLUDED.updated_at`,
+          [input.externalId, input.score, input.now]
+        );
+        userRating = {
+          id,
+          userId: input.userId,
+          externalId: input.externalId,
+          score: input.score,
+          createdAt: input.now,
+          updatedAt: input.now
+        };
+      }
+
+      const summaryResult = await client.query(
+        `SELECT external_id, rating_count, rating_total, updated_at
+         FROM game_rating_summaries
+         WHERE external_id = $1`,
+        [input.externalId]
+      );
+      const summary = mapGameRatingSummaryRow(summaryResult.rows[0]);
+
+      await client.query("COMMIT");
+      return { userRating, summary };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async createSyncJob(input: {

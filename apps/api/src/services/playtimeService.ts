@@ -6,6 +6,7 @@ import {
 import type { Repository } from "../repositories/types.js";
 import type { CatalogGame, CatalogLocalizations, CatalogService } from "./catalogService.js";
 import { decodeCursor, encodeCursor } from "../utils/pagination.js";
+import { getCriticScore } from "./criticScoreData.js";
 
 export type GamesTab = "owned" | "recent" | "top";
 
@@ -37,11 +38,19 @@ export interface ListedGame {
   localizations: CatalogLocalizations;
 }
 
+export interface PlayerRating {
+  userScore: number | null;
+  averageScore: number | null;
+  ratingCount: number;
+}
+
 export interface GameDetail extends ListedGame {
   description: string | null;
   publisher: string | null;
   releaseDate: string | null;
   storeUrl: string | null;
+  criticScore: number | null;
+  playerRating: PlayerRating;
   platform: "Switch";
   region: "JP" | "GLOBAL" | "UNKNOWN";
   corrections: PlaytimeCorrection[];
@@ -57,6 +66,9 @@ export interface PlaytimeService {
     limit?: number;
   }): Promise<{ items: ListedGame[]; nextCursor: string | null }>;
   getGameDetail(userId: string, gameId: string): Promise<GameDetail | null>;
+  getPlayerRatingByExternalId(userId: string, externalId: string): Promise<PlayerRating>;
+  rateGame(input: { userId: string; gameId: string; score: number }): Promise<PlayerRating>;
+  rateGameByExternalId(input: { userId: string; externalId: string; score: number }): Promise<PlayerRating>;
   addGameToLibrary(input: { userId: string; externalId: string }): Promise<GameDetail>;
   removeGameFromLibrary(input: { userId: string; gameId: string }): Promise<boolean>;
   listCorrections(userId: string, gameId?: string): Promise<PlaytimeCorrection[]>;
@@ -107,6 +119,54 @@ function getRecentCorrectionMinutes(
 }
 
 export function createPlaytimeService(repository: Repository, catalogService: CatalogService): PlaytimeService {
+  function buildPlayerRating(input: {
+    userScore: number | null;
+    ratingCount: number;
+    ratingTotal: number;
+  }): PlayerRating {
+    return {
+      userScore: input.userScore,
+      averageScore: input.ratingCount > 0 ? Number((input.ratingTotal / input.ratingCount).toFixed(1)) : null,
+      ratingCount: input.ratingCount
+    };
+  }
+
+  async function loadPlayerRatingByExternalId(userId: string, externalId: string): Promise<PlayerRating> {
+    const ratingSnapshot = await repository.getGameRatingSnapshot(userId, externalId);
+    return buildPlayerRating({
+      userScore: ratingSnapshot.userRating?.score ?? null,
+      ratingCount: ratingSnapshot.summary?.ratingCount ?? 0,
+      ratingTotal: ratingSnapshot.summary?.ratingTotal ?? 0
+    });
+  }
+
+  async function upsertRating(input: { userId: string; externalId: string; score: number; gameId?: string }) {
+    const now = new Date().toISOString();
+    const { userRating, summary } = await repository.upsertGameRating({
+      userId: input.userId,
+      externalId: input.externalId,
+      score: input.score,
+      now
+    });
+
+    await repository.insertAuditLog({
+      userId: input.userId,
+      action: "game_rating_upserted",
+      details: {
+        gameId: input.gameId ?? null,
+        externalId: input.externalId,
+        score: input.score
+      },
+      createdAt: now
+    });
+
+    return buildPlayerRating({
+      userScore: userRating.score,
+      ratingCount: summary.ratingCount,
+      ratingTotal: summary.ratingTotal
+    });
+  }
+
   async function buildEffectiveMap(userId: string): Promise<{
     games: Awaited<ReturnType<Repository["listGamesByUserId"]>>;
     effectiveMap: Record<string, EffectivePlaytime>;
@@ -161,11 +221,11 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
     return {
       id: game.id,
       externalId: game.externalId,
-      title: game.title,
-      coverUrl: game.coverUrl,
+      title: catalogGame?.title ?? game.title,
+      coverUrl: catalogGame?.coverUrl ?? game.coverUrl,
       ownedAt: game.ownedAt,
       lastPlayedAt: game.lastPlayedAt,
-      priceAmount: game.priceJpy,
+      priceAmount: catalogGame?.priceAmount ?? game.priceJpy,
       priceCurrency: "USD",
       effectivePlaytime: effectiveMap[game.id],
       localizations: catalogGame?.localizations ?? {}
@@ -285,9 +345,10 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
       ]);
       if (!game) return null;
 
-      const [catalogGame, corrections] = await Promise.all([
+      const [catalogGame, corrections, ratingSnapshot] = await Promise.all([
         catalogService.getCatalogGame(game.externalId),
-        repository.listCorrectionsByUserId(userId, game.id)
+        repository.listCorrectionsByUserId(userId, game.id),
+        repository.getGameRatingSnapshot(userId, game.externalId)
       ]);
 
       return {
@@ -296,6 +357,12 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
         publisher: catalogGame?.publisher ?? null,
         releaseDate: catalogGame?.releaseDate ?? null,
         storeUrl: catalogGame?.storeUrl ?? null,
+        criticScore: getCriticScore(game.externalId),
+        playerRating: buildPlayerRating({
+          userScore: ratingSnapshot.userRating?.score ?? null,
+          ratingCount: ratingSnapshot.summary?.ratingCount ?? 0,
+          ratingTotal: ratingSnapshot.summary?.ratingTotal ?? 0
+        }),
         platform: game.platform,
         region: game.region,
         corrections: corrections.map((row) => ({
@@ -309,6 +376,32 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
           revokedAt: row.revokedAt
         }))
       };
+    },
+
+    async getPlayerRatingByExternalId(userId: string, externalId: string) {
+      return loadPlayerRatingByExternalId(userId, externalId);
+    },
+
+    async rateGame(input: { userId: string; gameId: string; score: number }) {
+      const game = await repository.getGameById(input.userId, input.gameId);
+      if (!game) {
+        throw new Error("Game not found");
+      }
+
+      return upsertRating({
+        userId: input.userId,
+        externalId: game.externalId,
+        score: input.score,
+        gameId: input.gameId
+      });
+    },
+
+    async rateGameByExternalId(input: { userId: string; externalId: string; score: number }) {
+      return upsertRating({
+        userId: input.userId,
+        externalId: input.externalId,
+        score: input.score
+      });
     },
 
     async addGameToLibrary(input: { userId: string; externalId: string }) {

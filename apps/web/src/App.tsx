@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Select, Spin, message } from "antd";
+import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Rate, Select, Spin, message } from "antd";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
 
@@ -72,9 +72,17 @@ interface GameDetail extends OwnedGame {
   publisher: string | null;
   releaseDate: string | null;
   storeUrl: string | null;
+  criticScore: number | null;
+  playerRating: PlayerRating;
   platform: "Switch";
   region: "JP" | "GLOBAL" | "UNKNOWN";
   corrections: CorrectionItem[];
+}
+
+interface PlayerRating {
+  userScore: number | null;
+  averageScore: number | null;
+  ratingCount: number;
 }
 
 interface CatalogItem {
@@ -96,6 +104,8 @@ interface CatalogItem {
 }
 
 interface CatalogDetail extends Omit<CatalogItem, "isOwned" | "ownedGameId" | "ownedAt"> {
+  criticScore: number | null;
+  playerRating: PlayerRating;
   ownedGame: (OwnedGame & { priceAmount: number | null; priceCurrency: string }) | null;
   corrections: CorrectionItem[];
 }
@@ -104,6 +114,11 @@ interface CatalogListResponse {
   items: CatalogItem[];
   nextCursor: string | null;
   totalCount: number;
+}
+
+interface OwnedGamesResponse {
+  items: OwnedGame[];
+  nextCursor: string | null;
 }
 
 interface AccountInfo {
@@ -164,8 +179,21 @@ const PLAYTIME_PALETTE = [
   "#8753c7",
   "#c0508f"
 ];
+const DEFAULT_PLAYER_RATING = {
+  userScore: null,
+  averageScore: null,
+  ratingCount: 0
+} as const;
+const HOME_OWNED_GAMES_LIMIT = 18;
+const LIBRARY_OWNED_GAMES_PAGE_SIZE = 18;
+const MAX_PLAYER_SCORE = 10;
+const STAR_COUNT = 5;
+const STAR_INDEXES = Array.from({ length: STAR_COUNT }, (_, index) => index);
 
-const CATALOG_PAGE_SIZE = 9;
+function getCatalogPageSize(): number {
+  if (typeof window === "undefined") return 15;
+  return window.innerWidth <= 900 ? 9 : 15;
+}
 
 function parseStoredUser(): User | null {
   const token = getToken();
@@ -199,6 +227,24 @@ function formatDuration(minutes: number | null | undefined): string {
   if (!Number.isFinite(normalizedMinutes) || normalizedMinutes <= 0) return "0h";
   const hours = Math.round((normalizedMinutes / 60) * 10) / 10;
   return `${Number.isInteger(hours) ? hours.toFixed(0) : hours.toFixed(1)}h`;
+}
+
+function formatScore(value: number | null | undefined, digits = 1): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return value.toFixed(digits);
+}
+
+function clampPlayerScore(value: number): number {
+  if (!Number.isFinite(value)) return 0.1;
+  return Math.min(MAX_PLAYER_SCORE, Math.max(0.1, Math.round(value * 10) / 10));
+}
+
+function StarGlyph(input: { className?: string }) {
+  return (
+    <svg className={input.className} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.6l2.9 5.87 6.48.94-4.69 4.57 1.11 6.45L12 17.4l-5.8 3.03 1.11-6.45L2.62 9.4l6.48-.94L12 2.6z" />
+    </svg>
+  );
 }
 
 function convertCurrency(amount: number, fromCurrency: string, toCurrency: string, fxContext: FxContext | null): number | null {
@@ -310,12 +356,35 @@ function toHash(view: View): string {
   return view.page === "home" ? "#/" : `#/${view.page}`;
 }
 
-function toBackgroundImage(url: string | null | undefined): string {
-  const resolved = url ?? FALLBACK_COVERS[0];
+type CoverVariant = "card" | "hero" | "detail";
+
+function optimizeNintendoAssetUrl(url: string, variant: CoverVariant): string {
+  if (!url.startsWith("https://assets.nintendo.com/")) {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const assetPathMatch = parsed.pathname.match(/(?:^|\/)(?:v1\/)?(store\/software\/.+)$/);
+    if (!assetPathMatch) {
+      return url;
+    }
+
+    const width = variant === "detail" ? 720 : variant === "hero" ? 420 : 300;
+    parsed.pathname = `/image/upload/c_pad,dpr_2.0,f_auto,q_auto,w_${width}/b_rgb:ffffff/v1/${assetPathMatch[1]}`;
+    parsed.search = "";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+function toBackgroundImage(url: string | null | undefined, variant: CoverVariant = "card"): string {
+  const resolved = optimizeNintendoAssetUrl(url ?? FALLBACK_COVERS[0], variant);
   return `url("${resolved.replace(/"/g, '\\"')}")`;
 }
 
-function encodeCatalogCursor(offset: number): string | undefined {
+function encodeCursor(offset: number): string | undefined {
   if (offset <= 0) return undefined;
   return window.btoa(String(offset)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
@@ -328,11 +397,13 @@ function CoverCard(input: {
   owned?: boolean;
   onClick: () => void;
 }) {
+  const coverImage = toBackgroundImage(input.coverUrl, "card");
+
   return (
     <button type="button" className="cover-card" onClick={input.onClick}>
       <div
         className="cover-card-media"
-        style={{ backgroundImage: toBackgroundImage(input.coverUrl) }}
+        style={{ backgroundImage: coverImage } as CSSProperties}
       >
         {input.badge && <span className="cover-card-badge">{input.badge}</span>}
         {input.owned && <span className="cover-card-owned">已入库</span>}
@@ -345,18 +416,207 @@ function CoverCard(input: {
   );
 }
 
+function resolvePointerScore(clientX: number, element: HTMLButtonElement): number {
+  const rect = element.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+  return clampPlayerScore(ratio * MAX_PLAYER_SCORE);
+}
+
+export function LegacyPrecisionScoreInput(input: {
+  value: number | null;
+  disabled: boolean;
+  onChange: (score: number) => void;
+}) {
+  const [hoverScore, setHoverScore] = useState<number | null>(null);
+  const displayScore = hoverScore ?? input.value ?? 0;
+
+  function handleMouseMove(event: MouseEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+    setHoverScore(resolvePointerScore(event.clientX, event.currentTarget));
+  }
+
+  function handleClick(event: MouseEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+    input.onChange(resolvePointerScore(event.clientX, event.currentTarget));
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+
+    const baseScore = hoverScore ?? input.value ?? 5;
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setHoverScore(clampPlayerScore(baseScore + 0.1));
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      event.preventDefault();
+      setHoverScore(clampPlayerScore(baseScore - 0.1));
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setHoverScore(0.1);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setHoverScore(MAX_PLAYER_SCORE);
+      return;
+    }
+
+    if ((event.key === "Enter" || event.key === " ") && hoverScore !== null) {
+      event.preventDefault();
+      input.onChange(hoverScore);
+    }
+  }
+
+  return (
+    <div className="precision-score-input">
+      <button
+        type="button"
+        className="precision-score-button"
+        disabled={input.disabled}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverScore(null)}
+        onBlur={() => setHoverScore(null)}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="slider"
+        aria-label="Player score"
+        aria-valuemin={0.1}
+        aria-valuemax={MAX_PLAYER_SCORE}
+        aria-valuenow={input.value ?? 0}
+      >
+        <span className="precision-score-stars precision-score-stars-base" aria-hidden="true">
+          {"★".repeat(STAR_COUNT)}
+        </span>
+        <span
+          className="precision-score-stars precision-score-stars-fill"
+          style={{ width: `${(displayScore / MAX_PLAYER_SCORE) * 100}%` }}
+          aria-hidden="true"
+        >
+          {"★".repeat(STAR_COUNT)}
+        </span>
+      </button>
+      <div className="precision-score-caption">
+        <strong>{hoverScore !== null ? `${formatScore(hoverScore)} / 10` : input.value !== null ? `${formatScore(input.value)} / 10` : "点击星星评分"}</strong>
+        <span>{hoverScore !== null ? "点击即可提交当前分数" : "支持 0.1 分精细评分"}</span>
+      </div>
+    </div>
+  );
+}
+
+function PrecisionScoreInput(input: {
+  value: number | null;
+  disabled: boolean;
+  onChange: (score: number) => void;
+}) {
+  const [hoverScore, setHoverScore] = useState<number | null>(null);
+  const displayScore = hoverScore ?? input.value ?? 0;
+  const displayStars = displayScore / 2;
+
+  function handleMouseMove(event: MouseEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+    setHoverScore(resolvePointerScore(event.clientX, event.currentTarget));
+  }
+
+  function handleClick(event: MouseEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+    input.onChange(resolvePointerScore(event.clientX, event.currentTarget));
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (input.disabled) return;
+
+    const baseScore = hoverScore ?? input.value ?? 5;
+    if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+      event.preventDefault();
+      setHoverScore(clampPlayerScore(baseScore + 0.1));
+      return;
+    }
+
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+      event.preventDefault();
+      setHoverScore(clampPlayerScore(baseScore - 0.1));
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setHoverScore(0.1);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setHoverScore(MAX_PLAYER_SCORE);
+      return;
+    }
+
+    if ((event.key === "Enter" || event.key === " ") && hoverScore !== null) {
+      event.preventDefault();
+      input.onChange(hoverScore);
+    }
+  }
+
+  return (
+    <div className="precision-score-input">
+      <button
+        type="button"
+        className="precision-score-button"
+        disabled={input.disabled}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setHoverScore(null)}
+        onBlur={() => setHoverScore(null)}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role="slider"
+        aria-label="Player score"
+        aria-valuemin={0.1}
+        aria-valuemax={MAX_PLAYER_SCORE}
+        aria-valuenow={input.value ?? 0}
+      >
+        <span className="orange-score-stars" aria-hidden="true">
+          {STAR_INDEXES.map((index) => {
+            const fillRatio = Math.min(1, Math.max(0, displayStars - index));
+            return (
+              <span key={index} className="orange-score-star">
+                <StarGlyph className="orange-score-star-icon orange-score-star-base" />
+                <span className="orange-score-star-fill" style={{ width: `${fillRatio * 100}%` }}>
+                  <StarGlyph className="orange-score-star-icon orange-score-star-active" />
+                </span>
+              </span>
+            );
+          })}
+        </span>
+      </button>
+      <div className="precision-score-caption">
+        <strong>{hoverScore !== null ? `${formatScore(hoverScore)} / 10` : input.value !== null ? `${formatScore(input.value)} / 10` : "点击星星评分"}</strong>
+        <span>{hoverScore !== null ? "点击即可提交当前分数" : "支持 0.1 分精细评分"}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [token, setToken] = useState<string | null>(() => getToken());
   const [user, setUser] = useState<User | null>(() => parseStoredUser());
   const [view, setView] = useState<View>(() => parseHash());
   const [bootLoading, setBootLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [ratingLoading, setRatingLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [ownedGames, setOwnedGames] = useState<OwnedGame[]>([]);
   const [topGames, setTopGames] = useState<OwnedGame[]>([]);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
+  const [ownedGamesPage, setOwnedGamesPage] = useState(1);
   const [catalogPage, setCatalogPage] = useState(1);
+  const [catalogPageSize, setCatalogPageSize] = useState(() => getCatalogPageSize());
   const [catalogTotalCount, setCatalogTotalCount] = useState(0);
   const [catalogDetail, setCatalogDetail] = useState<CatalogDetail | null>(null);
   const [gameDetail, setGameDetail] = useState<GameDetail | null>(null);
@@ -373,13 +633,13 @@ export default function App() {
   const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string }>();
   const nickname = getNickname(user?.email);
   const marketMode = displayPreference?.marketMode ?? "DOMESTIC";
+  const gamePlayerRating = gameDetail?.playerRating ?? DEFAULT_PLAYER_RATING;
+  const gameCriticScore = typeof gameDetail?.criticScore === "number" ? gameDetail.criticScore : null;
   const heroCovers = useMemo(() => {
-    const dynamic = [...ownedGames.map((item) => item.coverUrl), ...catalogItems.map((item) => item.coverUrl)].filter(
-      (entry): entry is string => Boolean(entry)
-    );
+    const dynamic = ownedGames.map((item) => item.coverUrl).filter((entry): entry is string => Boolean(entry));
     return [...dynamic, ...FALLBACK_COVERS].slice(0, 6);
-  }, [catalogItems, ownedGames]);
-  const featuredOwnedGames = useMemo(() => ownedGames.slice(0, 6), [ownedGames]);
+  }, [ownedGames]);
+  const featuredOwnedGames = useMemo(() => ownedGames.slice(0, HOME_OWNED_GAMES_LIMIT), [ownedGames]);
   const dashboardGames = useMemo(() => topGames.slice(0, 5), [topGames]);
   const rankingTotalMinutes = useMemo(
     () => topGames.reduce((sum, game) => sum + game.effectivePlaytime.totalMinutes, 0),
@@ -422,9 +682,74 @@ export default function App() {
     setView(nextView);
   }
 
-  async function fetchOwnedGames(limit = 18, tab: GamesTab = "owned") {
-    const response = await api.get<{ items: OwnedGame[] }>("/api/games", { params: { tab, limit } });
+  function renderDetailHero(input: {
+    eyebrow: string;
+    title: string;
+    coverUrl: string | null;
+    badge: string | null;
+    description: string | null;
+    metaItems: Array<{ label: string; value: string }>;
+    criticScore: number | null;
+    playerRating: PlayerRating;
+    onRate: (score: number) => void;
+    actions: ReactNode;
+  }) {
+    return (
+      <section className="panel panel-wide detail-hero">
+        <div className="detail-cover">
+          <div className="detail-cover-art" style={{ backgroundImage: toBackgroundImage(input.coverUrl, "detail") }} />
+          {input.badge && <span className="cover-card-badge">{input.badge}</span>}
+        </div>
+        <div className="detail-copy">
+          <span className="eyebrow">{input.eyebrow}</span>
+          <h1>{input.title}</h1>
+          <div className="detail-meta-grid">
+            {input.metaItems.map((item) => (
+              <div key={item.label} className="detail-meta-card">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+          <div className="detail-score-grid">
+            <div className="detail-score-card">
+              <span>Meta 评分</span>
+              <strong>{input.criticScore === null ? "待补充" : `${input.criticScore}/100`}</strong>
+              <em>{input.criticScore === null ? "当前没有收录到该作品的媒体分" : "使用作品级 Metascore 作为参考"}</em>
+            </div>
+            <div className="detail-score-card">
+              <span>玩家平均分</span>
+              <strong>{input.playerRating.averageScore === null ? "--" : `${formatScore(input.playerRating.averageScore)} / 10`}</strong>
+              <em>{input.playerRating.ratingCount > 0 ? `${input.playerRating.ratingCount} 位玩家已评分` : "还没有玩家评分"}</em>
+            </div>
+            <div className="detail-score-card detail-score-card-interactive">
+              <span>我的评分</span>
+              <strong>{input.playerRating.userScore === null ? "点击星星评分" : `${formatScore(input.playerRating.userScore)} / 10`}</strong>
+              <PrecisionScoreInput
+                value={input.playerRating.userScore}
+                disabled={ratingLoading}
+                onChange={input.onRate}
+              />
+              <em>评分会实时并入全站平均分</em>
+            </div>
+          </div>
+          <p>{input.description ?? "当前没有同步到商店描述。你仍然可以先查看评分、再决定是否入库。"}</p>
+          <div className="row-actions">{input.actions}</div>
+        </div>
+      </section>
+    );
+  }
+
+  async function fetchOwnedGames(input?: { limit?: number; tab?: GamesTab; page?: number }) {
+    const limit = input?.limit ?? LIBRARY_OWNED_GAMES_PAGE_SIZE;
+    const tab = input?.tab ?? "owned";
+    const page = input?.page ?? 1;
+    const cursor = encodeCursor((page - 1) * limit);
+    const response = await api.get<OwnedGamesResponse>("/api/games", { params: { tab, limit, cursor } });
     setOwnedGames(response.data.items);
+    if (tab === "owned") {
+      setOwnedGamesPage(page);
+    }
   }
 
   async function fetchTopGames() {
@@ -461,9 +786,9 @@ export default function App() {
 
   async function fetchCatalogPage(input?: { query?: string; page?: number }) {
     const page = input?.page ?? 1;
-    const cursor = encodeCatalogCursor((page - 1) * CATALOG_PAGE_SIZE);
+    const cursor = encodeCursor((page - 1) * catalogPageSize);
     const response = await api.get<CatalogListResponse>("/api/catalog/games", {
-      params: { q: input?.query ?? catalogQuery, cursor, limit: CATALOG_PAGE_SIZE }
+      params: { q: input?.query ?? catalogQuery, cursor, limit: catalogPageSize }
     });
     setCatalogItems(response.data.items);
     setCatalogTotalCount(response.data.totalCount);
@@ -475,7 +800,7 @@ export default function App() {
     setErrorText(null);
     try {
       if (nextView.page === "home") {
-        await Promise.all([fetchSummary(), fetchOwnedGames(18), fetchTopGames()]);
+        await Promise.all([fetchSummary(), fetchOwnedGames({ limit: HOME_OWNED_GAMES_LIMIT, page: 1 }), fetchTopGames()]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "ranking") {
@@ -483,7 +808,11 @@ export default function App() {
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "library") {
-        await Promise.all([fetchSummary(), fetchOwnedGames(), fetchCatalogPage({ query: catalogQuery, page: 1 })]);
+        await Promise.all([
+          fetchSummary(),
+          fetchOwnedGames({ limit: LIBRARY_OWNED_GAMES_PAGE_SIZE, page: 1 }),
+          fetchCatalogPage({ query: catalogQuery, page: 1 })
+        ]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "game") {
@@ -528,6 +857,21 @@ export default function App() {
     if (!token) return;
     fetchDisplayPreferences().catch(() => undefined);
   }, [token]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const nextPageSize = getCatalogPageSize();
+      setCatalogPageSize((current) => (current === nextPageSize ? current : nextPageSize));
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!token || view.page !== "library") return;
+    fetchCatalogPage({ query: catalogQuery, page: 1 }).catch(() => undefined);
+  }, [catalogPageSize]);
 
   useEffect(() => {
     setRemoveConfirmOpen(false);
@@ -614,7 +958,10 @@ export default function App() {
       setActionLoading(true);
       const response = await api.post<GameDetail>("/api/games/library", { externalId });
       message.success("已加入我的游戏库");
-      await fetchOwnedGames();
+      await fetchOwnedGames({
+        limit: view.page === "home" ? HOME_OWNED_GAMES_LIMIT : LIBRARY_OWNED_GAMES_PAGE_SIZE,
+        page: view.page === "library" ? ownedGamesPage : 1
+      });
       await fetchSummary();
       navigate({ page: "game", gameId: response.data.id });
     } catch (error) {
@@ -630,7 +977,15 @@ export default function App() {
       await api.delete(`/api/games/${gameId}`);
       setRemoveConfirmOpen(false);
       setGameDetail(null);
-      await Promise.all([fetchOwnedGames(), fetchSummary()]);
+      const nextOwnedPage =
+        view.page === "library" && ownedGamesPage > 1 && ownedGames.length === 1 ? ownedGamesPage - 1 : ownedGamesPage;
+      await Promise.all([
+        fetchOwnedGames({
+          limit: view.page === "home" ? HOME_OWNED_GAMES_LIMIT : LIBRARY_OWNED_GAMES_PAGE_SIZE,
+          page: view.page === "library" ? nextOwnedPage : 1
+        }),
+        fetchSummary()
+      ]);
       message.success("已从我的游戏库移出");
       navigate({ page: "library" });
     } catch (error) {
@@ -673,6 +1028,34 @@ export default function App() {
     }
   }
 
+  async function rateGame(externalId: string, score: number) {
+    try {
+      setRatingLoading(true);
+      const response = await api.put<{ rating: PlayerRating }>(`/api/catalog/games/${externalId}/rating`, { score });
+      setGameDetail((current) =>
+        current && current.externalId === externalId
+          ? {
+              ...current,
+              playerRating: response.data.rating
+            }
+          : current
+      );
+      setCatalogDetail((current) =>
+        current && current.externalId === externalId
+          ? {
+              ...current,
+              playerRating: response.data.rating
+            }
+          : current
+      );
+      message.success("评分已更新");
+    } catch (error) {
+      message.error(getErrorMessage(error, "评分提交失败"));
+    } finally {
+      setRatingLoading(false);
+    }
+  }
+
   function logout() {
     clearToken();
     setToken(null);
@@ -700,7 +1083,7 @@ export default function App() {
             <div
               key={`${cover}-${index}`}
               className="auth-wall-cover"
-              style={{ backgroundImage: toBackgroundImage(cover) }}
+              style={{ backgroundImage: toBackgroundImage(cover, "hero") }}
             />
           ))}
         </div>
@@ -741,7 +1124,7 @@ export default function App() {
           <div
             key={`${cover}-${index}`}
             className="hero-wall-cover"
-            style={{ backgroundImage: toBackgroundImage(cover) }}
+            style={{ backgroundImage: toBackgroundImage(cover, "hero") }}
           />
         ))}
       </div>
@@ -752,7 +1135,6 @@ export default function App() {
           <div className="brand-chip">NS</div>
           <div>
             <strong>Nintendo GameTime</strong>
-            <span>目录入库 + 同步收藏 + 详情页修正</span>
           </div>
         </div>
 
@@ -790,7 +1172,11 @@ export default function App() {
             <div className="page-grid">
               <section className="panel hero-panel">
                 <span className="eyebrow">概览</span>
-                <h1>让缺失的游戏和时长，都回到同一个收藏视图里。</h1>
+                <h1 className="hero-title">
+                  <span>Nintendo</span>
+                  <span className="hero-title-switch">Switch</span>
+                  <span>GameTime</span>
+                </h1>
                 <p>账号同步负责抓取已有收藏，游戏目录负责手动入库兜底，时长修正统一收口到游戏详情页。</p>
                 <div className="stats-grid">
                   <div className="stat-card"><span>已拥有游戏</span><strong>{summary?.totalGames ?? 0}</strong></div>
@@ -985,18 +1371,33 @@ export default function App() {
                   </div>
                 </div>
                 {ownedGames.length > 0 ? (
-                  <div className="card-grid">
-                    {ownedGames.map((game) => (
-                      <CoverCard
-                        key={game.id}
-                        title={getDisplayTitle(game, marketMode)}
-                        coverUrl={game.coverUrl}
-                        badge={formatDuration(game.effectivePlaytime.totalMinutes)}
-                        meta={`${formatSourceText(game.effectivePlaytime.source)} / ${formatSimpleDate(game.lastPlayedAt)}`}
-                        onClick={() => navigate({ page: "game", gameId: game.id })}
-                      />
-                    ))}
-                  </div>
+                  <>
+                    <div className="card-grid">
+                      {ownedGames.map((game) => (
+                        <CoverCard
+                          key={game.id}
+                          title={getDisplayTitle(game, marketMode)}
+                          coverUrl={game.coverUrl}
+                          badge={formatDuration(game.effectivePlaytime.totalMinutes)}
+                          meta={`${formatSourceText(game.effectivePlaytime.source)} / ${formatSimpleDate(game.lastPlayedAt)}`}
+                          onClick={() => navigate({ page: "game", gameId: game.id })}
+                        />
+                      ))}
+                    </div>
+                    {(summary?.totalGames ?? 0) > LIBRARY_OWNED_GAMES_PAGE_SIZE && (
+                      <div className="catalog-pagination">
+                        <Pagination
+                          current={ownedGamesPage}
+                          total={summary?.totalGames ?? 0}
+                          pageSize={LIBRARY_OWNED_GAMES_PAGE_SIZE}
+                          showSizeChanger={false}
+                          onChange={(page) => {
+                            fetchOwnedGames({ limit: LIBRARY_OWNED_GAMES_PAGE_SIZE, page }).catch(() => undefined);
+                          }}
+                        />
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="empty-block">你的游戏库还是空的，下面的目录可以直接手动入库。</div>
                 )}
@@ -1028,12 +1429,12 @@ export default function App() {
                     />
                   ))}
                 </div>
-                {catalogTotalCount > CATALOG_PAGE_SIZE && (
+                {catalogTotalCount > catalogPageSize && (
                   <div className="catalog-pagination">
                     <Pagination
                       current={catalogPage}
                       total={catalogTotalCount}
-                      pageSize={CATALOG_PAGE_SIZE}
+                      pageSize={catalogPageSize}
                       showSizeChanger={false}
                       onChange={(page) => {
                         fetchCatalogPage({ query: catalogQuery, page }).catch(() => undefined);
@@ -1047,25 +1448,66 @@ export default function App() {
 
           {view.page === "catalog" && catalogDetail && (
             <div className="page-grid">
+              {renderDetailHero({
+                eyebrow: "目录详情",
+                title: getDisplayTitle(catalogDetail!, marketMode),
+                coverUrl: catalogDetail!.coverUrl,
+                badge: catalogDetail!.ownedGame ? formatDuration(catalogDetail!.ownedGame!.effectivePlaytime.totalMinutes) : null,
+                description:
+                  getDisplayDescription(catalogDetail!, marketMode) ?? "该目录条目暂未拉取到完整描述，你仍然可以先查看评分，再决定是否入库。",
+                metaItems: [
+                  { label: "价格", value: formatDisplayCurrency(catalogDetail!.priceAmount, catalogDetail!.priceCurrency, marketMode, fxContext) },
+                  { label: "平台", value: catalogDetail!.platform },
+                  { label: "发行日期", value: formatSimpleDate(catalogDetail!.releaseDate) },
+                  { label: "发行商", value: catalogDetail!.publisher ?? "待补充" },
+                  { label: "收藏状态", value: catalogDetail!.ownedGame ? "已在我的游戏库" : "尚未入库" },
+                  { label: "入库时间", value: catalogDetail!.ownedGame ? formatSimpleDate(catalogDetail!.ownedGame!.ownedAt) : "未入库" }
+                ],
+                criticScore: catalogDetail!.criticScore,
+                playerRating: catalogDetail!.playerRating,
+                onRate: (score) => {
+                  void rateGame(catalogDetail!.externalId, score);
+                },
+                actions: (
+                  <>
+                    {catalogDetail!.ownedGame ? (
+                      <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail!.ownedGame!.id })}>
+                        查看我的记录
+                      </Button>
+                    ) : (
+                      <Button type="primary" onClick={() => addToLibrary(catalogDetail!.externalId)}>
+                        加入我的游戏库
+                      </Button>
+                    )}
+                    <a className="link-button" href={catalogDetail!.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>
+                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                  </>
+                )
+              })}
+            </div>
+          )}
+
+          {false && view.page === "catalog" && catalogDetail && (
+            <div className="page-grid">
               <section className="panel panel-wide detail-hero">
-                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(catalogDetail.coverUrl) }} />
+                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(catalogDetail!.coverUrl, "detail") }} />
                 <div className="detail-copy">
                   <span className="eyebrow">目录详情</span>
-                  <h1>{getDisplayTitle(catalogDetail, marketMode)}</h1>
+                  <h1>{getDisplayTitle(catalogDetail!, marketMode)}</h1>
                   <div className="detail-meta-grid">
-                    <span>价格：{formatDisplayCurrency(catalogDetail.priceAmount, catalogDetail.priceCurrency, marketMode, fxContext)}</span>
-                    <span>平台：{catalogDetail.platform}</span>
-                    <span>发行：{formatSimpleDate(catalogDetail.releaseDate)}</span>
-                    <span>发行商：{catalogDetail.publisher ?? "待补充"}</span>
+                    <span>价格：{formatDisplayCurrency(catalogDetail!.priceAmount, catalogDetail!.priceCurrency, marketMode, fxContext)}</span>
+                    <span>平台：{catalogDetail!.platform}</span>
+                    <span>发行：{formatSimpleDate(catalogDetail!.releaseDate)}</span>
+                    <span>发行商：{catalogDetail!.publisher ?? "待补充"}</span>
                   </div>
-                  <p>{getDisplayDescription(catalogDetail, marketMode) ?? "该目录条目暂未拉到详情描述。你仍然可以先入库。"}</p>
+                  <p>{getDisplayDescription(catalogDetail!, marketMode) ?? "该目录条目暂未拉到详情描述。你仍然可以先入库。"}</p>
                   <div className="row-actions">
-                    {catalogDetail.ownedGame ? (
-                      <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail.ownedGame!.id })}>查看我的记录</Button>
+                    {catalogDetail!.ownedGame ? (
+                      <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail!.ownedGame!.id })}>查看我的记录</Button>
                     ) : (
-                      <Button type="primary" onClick={() => addToLibrary(catalogDetail.externalId)}>加入我的游戏库</Button>
+                      <Button type="primary" onClick={() => addToLibrary(catalogDetail!.externalId)}>加入我的游戏库</Button>
                     )}
-                    <a className="link-button" href={catalogDetail.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>
+                    <a className="link-button" href={catalogDetail!.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>
                     <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
                   </div>
                 </div>
@@ -1075,22 +1517,30 @@ export default function App() {
 
           {view.page === "game" && gameDetail && (
             <div className="page-grid">
-              <section className="panel panel-wide detail-hero">
-                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(gameDetail.coverUrl) }}>
-                  <span className="cover-card-badge">{formatDuration(gameDetail.effectivePlaytime.totalMinutes)}</span>
-                </div>
-                <div className="detail-copy">
-                  <span className="eyebrow">游戏详情</span>
-                  <h1>{getDisplayTitle(gameDetail, marketMode)}</h1>
-                  <div className="detail-meta-grid">
-                    <span>价格：{formatDisplayCurrency(gameDetail.priceAmount, gameDetail.priceCurrency, marketMode, fxContext)}</span>
-                    <span>已入库：{formatSimpleDate(gameDetail.ownedAt)}</span>
-                    <span>最近游玩：{formatSimpleDate(gameDetail.lastPlayedAt)}</span>
-                    <span>时长来源：{formatSourceText(gameDetail.effectivePlaytime.source)}</span>
-                  </div>
-                  <p>{getDisplayDescription(gameDetail, marketMode) ?? "当前没有同步到商店描述。你仍然可以在这里管理时长修正。"}</p>
-                  <div className="row-actions">
-                    {gameDetail.storeUrl && <a className="link-button" href={gameDetail.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>}
+              {renderDetailHero({
+                eyebrow: "游戏详情",
+                title: getDisplayTitle(gameDetail!, marketMode),
+                coverUrl: gameDetail!.coverUrl,
+                badge: formatDuration(gameDetail!.effectivePlaytime.totalMinutes),
+                description:
+                  getDisplayDescription(gameDetail!, marketMode) ?? "当前没有同步到商店描述。你仍然可以在这里管理评分和时长修正。",
+                metaItems: [
+                  { label: "价格", value: formatDisplayCurrency(gameDetail!.priceAmount, gameDetail!.priceCurrency, marketMode, fxContext) },
+                  { label: "已入库", value: formatSimpleDate(gameDetail!.ownedAt) },
+                  { label: "最近游玩", value: formatSimpleDate(gameDetail!.lastPlayedAt) },
+                  { label: "时长来源", value: formatSourceText(gameDetail!.effectivePlaytime.source) },
+                  { label: "平台", value: gameDetail!.platform },
+                  { label: "发行日期", value: formatSimpleDate(gameDetail!.releaseDate) },
+                  { label: "发行商", value: gameDetail!.publisher ?? "待补充" }
+                ],
+                criticScore: gameDetail!.criticScore,
+                playerRating: gameDetail!.playerRating,
+                onRate: (score) => {
+                  void rateGame(gameDetail!.externalId, score);
+                },
+                actions: (
+                  <>
+                    {gameDetail!.storeUrl && <a className="link-button" href={gameDetail!.storeUrl ?? undefined} target="_blank" rel="noreferrer">打开商店页</a>}
                     <Popconfirm
                       placement="bottomLeft"
                       overlayClassName="game-remove-popconfirm"
@@ -1101,7 +1551,74 @@ export default function App() {
                       cancelText="取消"
                       okButtonProps={{ danger: true, className: "game-remove-popconfirm-ok" }}
                       cancelButtonProps={{ className: "game-remove-popconfirm-cancel" }}
-                      onConfirm={() => removeFromLibrary(gameDetail.id)}
+                      onConfirm={() => removeFromLibrary(gameDetail!.id)}
+                    >
+                      <Button danger className={removeConfirmOpen ? "remove-trigger-active" : undefined}>
+                        {removeConfirmOpen ? "确认移出" : "移出游戏库"}
+                      </Button>
+                    </Popconfirm>
+                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                  </>
+                )
+              })}
+              {false && (
+              <section className="panel panel-wide detail-hero">
+                <div className="detail-cover" style={{ backgroundImage: toBackgroundImage(gameDetail!.coverUrl, "detail") }}>
+                  <span className="cover-card-badge">{formatDuration(gameDetail!.effectivePlaytime.totalMinutes)}</span>
+                </div>
+                <div className="detail-copy">
+                  <span className="eyebrow">游戏详情</span>
+                  <h1>{getDisplayTitle(gameDetail!, marketMode)}</h1>
+                  <div className="detail-meta-grid">
+                    <span>价格：{formatDisplayCurrency(gameDetail!.priceAmount, gameDetail!.priceCurrency, marketMode, fxContext)}</span>
+                    <span>已入库：{formatSimpleDate(gameDetail!.ownedAt)}</span>
+                    <span>最近游玩：{formatSimpleDate(gameDetail!.lastPlayedAt)}</span>
+                    <span>时长来源：{formatSourceText(gameDetail!.effectivePlaytime.source)}</span>
+                    <span>平台：{gameDetail!.platform}</span>
+                    <span>发行：{formatSimpleDate(gameDetail!.releaseDate)}</span>
+                    <span>发行商：{gameDetail!.publisher ?? "待补充"}</span>
+                  </div>
+                  <div className="detail-score-grid">
+                    <div className="detail-score-card">
+                      <span>Meta 评分</span>
+                      <strong>{gameCriticScore === null ? "待补充" : `${gameCriticScore}/100`}</strong>
+                      <em>{gameCriticScore === null ? "当前没有收录到该作品的媒体分" : "使用作品级 Metascore 作为参考"}</em>
+                    </div>
+                    <div className="detail-score-card">
+                      <span>玩家平均分</span>
+                      <strong>{gamePlayerRating.averageScore === null ? "--" : `${formatScore(gamePlayerRating.averageScore)} / 5`}</strong>
+                      <em>{gamePlayerRating.ratingCount > 0 ? `${gamePlayerRating.ratingCount} 位玩家已评分` : "还没有玩家评分"}</em>
+                    </div>
+                    <div className="detail-score-card detail-score-card-interactive">
+                      <span>我的评分</span>
+                      <strong>{gamePlayerRating.userScore === null ? "点击星级评分" : `${formatScore(gamePlayerRating.userScore)} / 5`}</strong>
+                      <Rate
+                        value={gamePlayerRating.userScore ?? 0}
+                        count={5}
+                        disabled={ratingLoading}
+                        onChange={(value) => {
+                          if (value > 0) {
+                            void rateGame(gameDetail!.id, value);
+                          }
+                        }}
+                      />
+                      <em>评分结果会实时并入全站平均分</em>
+                    </div>
+                  </div>
+                  <p>{getDisplayDescription(gameDetail!, marketMode) ?? "当前没有同步到商店描述。你仍然可以在这里管理时长修正。"}</p>
+                  <div className="row-actions">
+                    {gameDetail!.storeUrl && <a className="link-button" href={gameDetail!.storeUrl ?? undefined} target="_blank" rel="noreferrer">打开商店页</a>}
+                    <Popconfirm
+                      placement="bottomLeft"
+                      overlayClassName="game-remove-popconfirm"
+                      onOpenChange={setRemoveConfirmOpen}
+                      title="移出我的游戏库？"
+                      description="移出后会从当前游戏库消失；如果后续账号同步再次识别到它，仍可能重新加入。"
+                      okText="确认移出"
+                      cancelText="取消"
+                      okButtonProps={{ danger: true, className: "game-remove-popconfirm-ok" }}
+                      cancelButtonProps={{ className: "game-remove-popconfirm-cancel" }}
+                      onConfirm={() => removeFromLibrary(gameDetail!.id)}
                     >
                       <Button danger className={removeConfirmOpen ? "remove-trigger-active" : undefined}>
                         {removeConfirmOpen ? "确认移出" : "移出游戏库"}
@@ -1111,6 +1628,7 @@ export default function App() {
                   </div>
                 </div>
               </section>
+              )}
 
               <section className="panel">
                 <div className="panel-head"><div><span className="eyebrow">时长修正</span><h2>在详情页里直接修正</h2></div></div>
@@ -1118,7 +1636,7 @@ export default function App() {
                   layout="vertical"
                   form={correctionForm}
                   initialValues={{ type: "ADD_DELTA" as const, hours: 0.5, reason: "" }}
-                  onFinish={() => submitCorrection(gameDetail.id)}
+                  onFinish={() => submitCorrection(gameDetail!.id)}
                 >
                   <div className="form-split">
                     <Form.Item name="type" label="修正方式" rules={[{ required: true, message: "请选择修正方式" }]}>
@@ -1142,9 +1660,9 @@ export default function App() {
 
               <section className="panel">
                 <div className="panel-head"><div><span className="eyebrow">修正记录</span><h2>当前游戏的时长历史</h2></div></div>
-                {gameDetail.corrections.length > 0 ? (
+                {gameDetail!.corrections.length > 0 ? (
                   <div className="stack-list">
-                    {gameDetail.corrections.map((item) => (
+                    {gameDetail!.corrections.map((item) => (
                       <div key={item.id} className="stack-item">
                         <div>
                           <strong>{item.type === "SET_TOTAL" ? "设定总时长" : "增减时长"}</strong>
@@ -1152,7 +1670,7 @@ export default function App() {
                           <span>{formatSimpleDate(item.createdAt)} / {formatDuration(item.minutes)}</span>
                         </div>
                         {!item.revokedAt ? (
-                          <Button onClick={() => revokeCorrection(gameDetail.id, item.id)}>撤销</Button>
+                          <Button onClick={() => revokeCorrection(gameDetail!.id, item.id)}>撤销</Button>
                         ) : (
                           <span className="subtle-note">已撤销</span>
                         )}

@@ -2,6 +2,7 @@ import Router from "@koa/router";
 import { z } from "zod";
 import type { AppDependencies } from "../container.js";
 import { createAuthMiddleware, requireAuthUser } from "../middleware/auth.js";
+import { getCriticScore } from "../services/criticScoreData.js";
 
 const listQuerySchema = z.object({
   q: z.string().optional(),
@@ -11,6 +12,12 @@ const listQuerySchema = z.object({
 
 const detailParamsSchema = z.object({
   externalId: z.string().min(1)
+});
+
+const gameRatingSchema = z.object({
+  score: z.coerce.number().min(0.1).max(10).refine((value) => Number.isInteger(value * 10), {
+    message: "Score must use 0.1 increments"
+  })
 });
 
 function isInternalRequest(ctx: Router.RouterContext, internalToken: string): boolean {
@@ -68,9 +75,10 @@ export function createCatalogRouter(deps: AppDependencies): Router {
     }
 
     const authUser = requireAuthUser(ctx.state);
-    const [catalogGame, ownedGames] = await Promise.all([
+    const [catalogGame, ownedGames, playerRating] = await Promise.all([
       deps.catalogService.getCatalogGame(parsed.data.externalId),
-      deps.repository.listGamesByUserId(authUser.userId)
+      deps.repository.listGamesByUserId(authUser.userId),
+      deps.playtimeService.getPlayerRatingByExternalId(authUser.userId, parsed.data.externalId)
     ]);
 
     if (!catalogGame) {
@@ -89,6 +97,8 @@ export function createCatalogRouter(deps: AppDependencies): Router {
 
     ctx.body = {
       ...catalogGame,
+      criticScore: getCriticScore(parsed.data.externalId),
+      playerRating,
       ownedGame: ownedGame
         ? {
             id: ownedGame.id,
@@ -105,6 +115,37 @@ export function createCatalogRouter(deps: AppDependencies): Router {
         : null,
       corrections
     };
+  });
+
+  router.put("/api/catalog/games/:externalId/rating", requireAuth, async (ctx) => {
+    const parsedParams = detailParamsSchema.safeParse(ctx.params);
+    const parsedBody = gameRatingSchema.safeParse(ctx.request.body);
+    if (!parsedParams.success || !parsedBody.success) {
+      ctx.status = 400;
+      ctx.body = {
+        message: "Invalid payload",
+        issues: {
+          params: parsedParams.success ? undefined : parsedParams.error.flatten(),
+          body: parsedBody.success ? undefined : parsedBody.error.flatten()
+        }
+      };
+      return;
+    }
+
+    const authUser = requireAuthUser(ctx.state);
+    const catalogGame = await deps.catalogService.getCatalogGame(parsedParams.data.externalId);
+    if (!catalogGame) {
+      ctx.status = 404;
+      ctx.body = { message: "Catalog game not found" };
+      return;
+    }
+
+    const rating = await deps.playtimeService.rateGameByExternalId({
+      userId: authUser.userId,
+      externalId: parsedParams.data.externalId,
+      score: parsedBody.data.score
+    });
+    ctx.body = { rating };
   });
 
   router.get("/api/catalog/status", requireAuth, async (ctx) => {

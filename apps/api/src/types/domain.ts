@@ -101,6 +101,22 @@ export interface CorrectionRow {
   deletedAt: string | null;
 }
 
+export interface GameRatingRow {
+  id: string;
+  userId: string;
+  externalId: string;
+  score: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GameRatingSummaryRow {
+  externalId: string;
+  ratingCount: number;
+  ratingTotal: number;
+  updatedAt: string;
+}
+
 export interface SyncJobRow {
   id: string;
   userId: string;

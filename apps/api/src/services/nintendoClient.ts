@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AppEnv } from "../config/env.js";
 import type { NintendoFetchedGame } from "../types/domain.js";
-import { createCatalogService, getCatalogSeeds } from "./catalogService.js";
+import { getCatalogSeeds } from "./catalogService.js";
 
 export interface NintendoClient {
   fetchUserGames(sessionToken: string): Promise<NintendoFetchedGame[]>;
@@ -13,8 +13,6 @@ function seededNumber(seed: string, min: number, max: number): number {
   return min + (value % (max - min + 1));
 }
 
-const mockCatalogService = createCatalogService();
-
 async function mockGames(sessionToken: string): Promise<NintendoFetchedGame[]> {
   const daySeed = new Date().toISOString().slice(0, 10);
   const base = `${sessionToken}:${daySeed}`;
@@ -25,21 +23,17 @@ async function mockGames(sessionToken: string): Promise<NintendoFetchedGame[]> {
     "dead-cells-switch",
     "hollow-knight-switch"
   ];
-  const seedRows = getCatalogSeeds().filter((entry) => seedIds.includes(entry.externalId));
-  const catalogGames = await Promise.all(
-    seedRows.map(async (seed) => (await mockCatalogService.getCatalogGame(seed.externalId)) ?? null)
-  );
+  const catalogGames = getCatalogSeeds().filter((entry) => seedIds.includes(entry.externalId));
 
   return [
     ...catalogGames
-      .filter((entry): entry is NonNullable<(typeof catalogGames)[number]> => Boolean(entry))
       .map((entry, index) => ({
         externalId: entry.externalId,
         title: entry.title,
-        coverUrl: entry.coverUrl,
+        coverUrl: entry.fallbackCoverUrl,
         region: "GLOBAL" as const,
         platform: "Switch" as const,
-        priceJpy: entry.priceAmount,
+        priceJpy: entry.fallbackPriceAmount,
         playedMinutes: seededNumber(`${base}:${entry.externalId}`, 20 + index * 10, 160 + index * 40) * 60,
         ownedAt: new Date(Date.now() - (20 + index * 9) * 86400000).toISOString(),
         lastPlayedAt: new Date(Date.now() - (index + 1) * 86400000).toISOString()
