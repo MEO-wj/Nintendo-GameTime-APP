@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Rate, Select, Spin, message } from "antd";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
@@ -7,10 +7,17 @@ type CorrectionType = "SET_TOTAL" | "ADD_DELTA";
 type PlaytimeSource = "official" | "corrected" | "manual-only";
 type MarketMode = "GLOBAL" | "DOMESTIC";
 type GamesTab = "owned" | "recent" | "top";
+type LibraryView = {
+  page: "library";
+  ownedPage: number;
+  catalogPage: number;
+  query: string;
+};
+type DetailReturnView = { page: "home" } | LibraryView;
 type View =
   | { page: "home" }
   | { page: "ranking" }
-  | { page: "library" }
+  | LibraryView
   | { page: "game"; gameId: string }
   | { page: "catalog"; externalId: string }
   | { page: "account" };
@@ -234,6 +241,11 @@ function formatScore(value: number | null | undefined, digits = 1): string {
   return value.toFixed(digits);
 }
 
+function formatPercentScore(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "--";
+  return Math.round(value * 10).toString();
+}
+
 function clampPlayerScore(value: number): number {
   if (!Number.isFinite(value)) return 0.1;
   return Math.min(MAX_PLAYER_SCORE, Math.max(0.1, Math.round(value * 10) / 10));
@@ -339,11 +351,33 @@ function getPlaytimeColor(index: number): string {
   return PLAYTIME_PALETTE[index % PLAYTIME_PALETTE.length];
 }
 
+function parsePositiveInt(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function createLibraryView(input?: Partial<Omit<LibraryView, "page">>): LibraryView {
+  return {
+    page: "library",
+    ownedPage: input?.ownedPage ?? 1,
+    catalogPage: input?.catalogPage ?? 1,
+    query: input?.query ?? ""
+  };
+}
+
 function parseHash(): View {
   const raw = window.location.hash.replace(/^#\/?/, "");
-  const parts = raw.split("/").filter(Boolean);
+  const [path, search = ""] = raw.split("?");
+  const parts = path.split("/").filter(Boolean);
+  const params = new URLSearchParams(search);
   if (parts[0] === "ranking") return { page: "ranking" };
-  if (parts[0] === "library") return { page: "library" };
+  if (parts[0] === "library") {
+    return createLibraryView({
+      ownedPage: parsePositiveInt(params.get("owned"), 1),
+      catalogPage: parsePositiveInt(params.get("catalog"), 1),
+      query: params.get("q") ?? ""
+    });
+  }
   if (parts[0] === "account") return { page: "account" };
   if (parts[0] === "game" && parts[1]) return { page: "game", gameId: decodeURIComponent(parts[1]) };
   if (parts[0] === "catalog" && parts[1]) return { page: "catalog", externalId: decodeURIComponent(parts[1]) };
@@ -353,6 +387,14 @@ function parseHash(): View {
 function toHash(view: View): string {
   if (view.page === "game") return `#/game/${encodeURIComponent(view.gameId)}`;
   if (view.page === "catalog") return `#/catalog/${encodeURIComponent(view.externalId)}`;
+  if (view.page === "library") {
+    const params = new URLSearchParams();
+    if (view.ownedPage > 1) params.set("owned", String(view.ownedPage));
+    if (view.catalogPage > 1) params.set("catalog", String(view.catalogPage));
+    if (view.query.trim()) params.set("q", view.query.trim());
+    const query = params.toString();
+    return query ? `#/library?${query}` : "#/library";
+  }
   return view.page === "home" ? "#/" : `#/${view.page}`;
 }
 
@@ -487,9 +529,10 @@ export function LegacyPrecisionScoreInput(input: {
         onKeyDown={handleKeyDown}
         role="slider"
         aria-label="Player score"
-        aria-valuemin={0.1}
-        aria-valuemax={MAX_PLAYER_SCORE}
-        aria-valuenow={input.value ?? 0}
+        aria-valuemin={1}
+        aria-valuemax={100}
+        aria-valuenow={Math.round((input.value ?? 0) * 10)}
+        aria-valuetext={input.value === null ? "未评分" : `${formatPercentScore(input.value)} 分`}
       >
         <span className="precision-score-stars precision-score-stars-base" aria-hidden="true">
           {"★".repeat(STAR_COUNT)}
@@ -502,10 +545,6 @@ export function LegacyPrecisionScoreInput(input: {
           {"★".repeat(STAR_COUNT)}
         </span>
       </button>
-      <div className="precision-score-caption">
-        <strong>{hoverScore !== null ? `${formatScore(hoverScore)} / 10` : input.value !== null ? `${formatScore(input.value)} / 10` : "点击星星评分"}</strong>
-        <span>{hoverScore !== null ? "点击即可提交当前分数" : "支持 0.1 分精细评分"}</span>
-      </div>
     </div>
   );
 }
@@ -517,7 +556,15 @@ function PrecisionScoreInput(input: {
 }) {
   const [hoverScore, setHoverScore] = useState<number | null>(null);
   const displayScore = hoverScore ?? input.value ?? 0;
-  const displayStars = displayScore / 2;
+  const previewLabel = hoverScore === null ? null : `${formatPercentScore(hoverScore)} 分`;
+
+  function renderStarRow() {
+    return STAR_INDEXES.map((index) => <StarGlyph key={index} className="precision-score-star-icon" />);
+  }
+
+  function clearPreview() {
+    setHoverScore(null);
+  }
 
   function handleMouseMove(event: MouseEvent<HTMLButtonElement>) {
     if (input.disabled) return;
@@ -570,42 +617,43 @@ function PrecisionScoreInput(input: {
         className="precision-score-button"
         disabled={input.disabled}
         onMouseMove={handleMouseMove}
-        onMouseLeave={() => setHoverScore(null)}
-        onBlur={() => setHoverScore(null)}
+        onMouseLeave={clearPreview}
+        onBlur={clearPreview}
         onClick={handleClick}
         onKeyDown={handleKeyDown}
         role="slider"
         aria-label="Player score"
-        aria-valuemin={0.1}
-        aria-valuemax={MAX_PLAYER_SCORE}
-        aria-valuenow={input.value ?? 0}
+        aria-valuemin={1}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(((hoverScore ?? input.value) ?? 0) * 10)}
+        aria-valuetext={(hoverScore ?? input.value) === null ? "未评分" : `${formatPercentScore(hoverScore ?? input.value)} 分`}
       >
-        <span className="orange-score-stars" aria-hidden="true">
-          {STAR_INDEXES.map((index) => {
-            const fillRatio = Math.min(1, Math.max(0, displayStars - index));
-            return (
-              <span key={index} className="orange-score-star">
-                <StarGlyph className="orange-score-star-icon orange-score-star-base" />
-                <span className="orange-score-star-fill" style={{ width: `${fillRatio * 100}%` }}>
-                  <StarGlyph className="orange-score-star-icon orange-score-star-active" />
-                </span>
-              </span>
-            );
-          })}
+        <span className="precision-score-stars precision-score-stars-base" aria-hidden="true">
+          <span className="precision-score-star-row">{renderStarRow()}</span>
+        </span>
+        <span
+          className="precision-score-stars precision-score-stars-fill"
+          style={{ width: `${(displayScore / MAX_PLAYER_SCORE) * 100}%` }}
+          aria-hidden="true"
+        >
+          <span className="precision-score-star-row">{renderStarRow()}</span>
         </span>
       </button>
-      <div className="precision-score-caption">
-        <strong>{hoverScore !== null ? `${formatScore(hoverScore)} / 10` : input.value !== null ? `${formatScore(input.value)} / 10` : "点击星星评分"}</strong>
-        <span>{hoverScore !== null ? "点击即可提交当前分数" : "支持 0.1 分精细评分"}</span>
-      </div>
+      <span
+        className={`precision-score-preview${previewLabel ? " precision-score-preview-visible" : ""}`}
+        aria-live="polite"
+      >
+        {previewLabel}
+      </span>
     </div>
   );
 }
 
 export default function App() {
+  const initialView = parseHash();
   const [token, setToken] = useState<string | null>(() => getToken());
   const [user, setUser] = useState<User | null>(() => parseStoredUser());
-  const [view, setView] = useState<View>(() => parseHash());
+  const [view, setView] = useState<View>(() => initialView);
   const [bootLoading, setBootLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [ratingLoading, setRatingLoading] = useState(false);
@@ -618,6 +666,15 @@ export default function App() {
   const [catalogPage, setCatalogPage] = useState(1);
   const [catalogPageSize, setCatalogPageSize] = useState(() => getCatalogPageSize());
   const [catalogTotalCount, setCatalogTotalCount] = useState(0);
+  const [lastLibraryView, setLastLibraryView] = useState<LibraryView>(() =>
+    initialView.page === "library" ? initialView : createLibraryView()
+  );
+  const [catalogReturnView, setCatalogReturnView] = useState<DetailReturnView>(() =>
+    initialView.page === "library" ? initialView : { page: "home" }
+  );
+  const [gameReturnView, setGameReturnView] = useState<DetailReturnView>(() =>
+    initialView.page === "library" ? initialView : { page: "home" }
+  );
   const [catalogDetail, setCatalogDetail] = useState<CatalogDetail | null>(null);
   const [gameDetail, setGameDetail] = useState<GameDetail | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
@@ -631,6 +688,7 @@ export default function App() {
   const [authForm] = Form.useForm<{ email: string; code?: string }>();
   const [bindForm] = Form.useForm<{ sessionToken: string; region: "JP" | "GLOBAL" | "UNKNOWN" }>();
   const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string }>();
+  const hasHandledCatalogPageSizeChange = useRef(false);
   const nickname = getNickname(user?.email);
   const marketMode = displayPreference?.marketMode ?? "DOMESTIC";
   const gamePlayerRating = gameDetail?.playerRating ?? DEFAULT_PLAYER_RATING;
@@ -673,6 +731,37 @@ export default function App() {
     return `conic-gradient(${segments.join(", ")})`;
   }, [dashboardGames, dashboardTotalMinutes]);
 
+  function getLibraryView(input?: Partial<LibraryView>): LibraryView {
+    const base = view.page === "library" ? view : lastLibraryView;
+    return createLibraryView({
+      ownedPage: input?.ownedPage ?? base.ownedPage,
+      catalogPage: input?.catalogPage ?? base.catalogPage,
+      query: input?.query ?? base.query
+    });
+  }
+
+  function resolveDetailReturnView(source: View): DetailReturnView {
+    return source.page === "library" ? getLibraryView(source) : { page: "home" };
+  }
+
+  function openGameDetail(gameId: string, source: View = view) {
+    setGameReturnView(resolveDetailReturnView(source));
+    navigate({ page: "game", gameId });
+  }
+
+  function openCatalogDetail(externalId: string, source: View = view) {
+    setCatalogReturnView(resolveDetailReturnView(source));
+    navigate({ page: "catalog", externalId });
+  }
+
+  function goBackFromGameDetail() {
+    navigate(gameReturnView);
+  }
+
+  function goBackFromCatalogDetail() {
+    navigate(catalogReturnView);
+  }
+
   function navigate(nextView: View) {
     const hash = toHash(nextView);
     if (window.location.hash !== hash) {
@@ -703,6 +792,7 @@ export default function App() {
         <div className="detail-copy">
           <span className="eyebrow">{input.eyebrow}</span>
           <h1>{input.title}</h1>
+          <p className="detail-description">{input.description ?? "当前没有同步到商店描述。你仍然可以先查看评分、再决定是否入库。"}</p>
           <div className="detail-meta-grid">
             {input.metaItems.map((item) => (
               <div key={item.label} className="detail-meta-card">
@@ -712,28 +802,37 @@ export default function App() {
             ))}
           </div>
           <div className="detail-score-grid">
-            <div className="detail-score-card">
+            <div
+              className="detail-score-card detail-score-card-meta"
+              data-score={input.criticScore === null ? "--" : Math.round(input.criticScore)}
+            >
               <span>Meta 评分</span>
-              <strong>{input.criticScore === null ? "待补充" : `${input.criticScore}/100`}</strong>
+              <strong className="detail-score-placeholder" aria-hidden="true">
+                100 分
+              </strong>
+              <span className="sr-only">{input.criticScore === null ? "待补充" : `${input.criticScore} / 100`}</span>
               <em>{input.criticScore === null ? "当前没有收录到该作品的媒体分" : "使用作品级 Metascore 作为参考"}</em>
             </div>
-            <div className="detail-score-card">
+            <div
+              className="detail-score-card detail-score-card-player"
+              data-score={formatPercentScore(input.playerRating.averageScore)}
+            >
               <span>玩家平均分</span>
-              <strong>{input.playerRating.averageScore === null ? "--" : `${formatScore(input.playerRating.averageScore)} / 10`}</strong>
+              <strong className="detail-score-placeholder" aria-hidden="true">
+                100 分
+              </strong>
+              <span className="sr-only">{input.playerRating.averageScore === null ? "暂无评分" : `${formatPercentScore(input.playerRating.averageScore)} 分`}</span>
               <em>{input.playerRating.ratingCount > 0 ? `${input.playerRating.ratingCount} 位玩家已评分` : "还没有玩家评分"}</em>
             </div>
             <div className="detail-score-card detail-score-card-interactive">
               <span>我的评分</span>
-              <strong>{input.playerRating.userScore === null ? "点击星星评分" : `${formatScore(input.playerRating.userScore)} / 10`}</strong>
               <PrecisionScoreInput
                 value={input.playerRating.userScore}
                 disabled={ratingLoading}
                 onChange={input.onRate}
               />
-              <em>评分会实时并入全站平均分</em>
             </div>
           </div>
-          <p>{input.description ?? "当前没有同步到商店描述。你仍然可以先查看评分、再决定是否入库。"}</p>
           <div className="row-actions">{input.actions}</div>
         </div>
       </section>
@@ -808,10 +907,11 @@ export default function App() {
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "library") {
+        setCatalogQuery(nextView.query);
         await Promise.all([
           fetchSummary(),
-          fetchOwnedGames({ limit: LIBRARY_OWNED_GAMES_PAGE_SIZE, page: 1 }),
-          fetchCatalogPage({ query: catalogQuery, page: 1 })
+          fetchOwnedGames({ limit: LIBRARY_OWNED_GAMES_PAGE_SIZE, page: nextView.ownedPage }),
+          fetchCatalogPage({ query: nextView.query, page: nextView.catalogPage })
         ]);
         setGameDetail(null);
         setCatalogDetail(null);
@@ -859,6 +959,12 @@ export default function App() {
   }, [token]);
 
   useEffect(() => {
+    if (view.page === "library") {
+      setLastLibraryView(view);
+    }
+  }, [view]);
+
+  useEffect(() => {
     const handleResize = () => {
       const nextPageSize = getCatalogPageSize();
       setCatalogPageSize((current) => (current === nextPageSize ? current : nextPageSize));
@@ -869,8 +975,12 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!hasHandledCatalogPageSizeChange.current) {
+      hasHandledCatalogPageSizeChange.current = true;
+      return;
+    }
     if (!token || view.page !== "library") return;
-    fetchCatalogPage({ query: catalogQuery, page: 1 }).catch(() => undefined);
+    navigate(getLibraryView({ catalogPage: 1, query: catalogQuery }));
   }, [catalogPageSize]);
 
   useEffect(() => {
@@ -958,12 +1068,13 @@ export default function App() {
       setActionLoading(true);
       const response = await api.post<GameDetail>("/api/games/library", { externalId });
       message.success("已加入我的游戏库");
+      const currentLibraryView = getLibraryView();
       await fetchOwnedGames({
         limit: view.page === "home" ? HOME_OWNED_GAMES_LIMIT : LIBRARY_OWNED_GAMES_PAGE_SIZE,
-        page: view.page === "library" ? ownedGamesPage : 1
+        page: view.page === "home" ? 1 : currentLibraryView.ownedPage
       });
       await fetchSummary();
-      navigate({ page: "game", gameId: response.data.id });
+      openGameDetail(response.data.id, view.page === "catalog" ? catalogReturnView : resolveDetailReturnView(view));
     } catch (error) {
       message.error(getErrorMessage(error, "入库失败"));
     } finally {
@@ -977,17 +1088,17 @@ export default function App() {
       await api.delete(`/api/games/${gameId}`);
       setRemoveConfirmOpen(false);
       setGameDetail(null);
-      const nextOwnedPage =
-        view.page === "library" && ownedGamesPage > 1 && ownedGames.length === 1 ? ownedGamesPage - 1 : ownedGamesPage;
+      const currentLibraryView = getLibraryView();
+      const nextOwnedPage = currentLibraryView.ownedPage > 1 && ownedGames.length === 1 ? currentLibraryView.ownedPage - 1 : currentLibraryView.ownedPage;
       await Promise.all([
         fetchOwnedGames({
-          limit: view.page === "home" ? HOME_OWNED_GAMES_LIMIT : LIBRARY_OWNED_GAMES_PAGE_SIZE,
-          page: view.page === "library" ? nextOwnedPage : 1
+          limit: LIBRARY_OWNED_GAMES_PAGE_SIZE,
+          page: nextOwnedPage
         }),
         fetchSummary()
       ]);
       message.success("已从我的游戏库移出");
-      navigate({ page: "library" });
+      navigate(getLibraryView({ ownedPage: nextOwnedPage }));
     } catch (error) {
       message.error(getErrorMessage(error, "移出游戏库失败"));
     } finally {
@@ -1149,7 +1260,7 @@ export default function App() {
           <button
             type="button"
             className={view.page === "library" ? "topnav-active" : ""}
-            onClick={() => navigate({ page: "library" })}
+            onClick={() => navigate(getLibraryView())}
           >
             游戏库
           </button>
@@ -1185,7 +1296,7 @@ export default function App() {
                   <div className="stat-card"><span>近 30 天</span><strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong></div>
                 </div>
                 <div className="row-actions">
-                  <Button type="primary" onClick={() => navigate({ page: "library" })}>浏览游戏目录</Button>
+                  <Button type="primary" onClick={() => navigate(getLibraryView())}>浏览游戏目录</Button>
                 </div>
               </section>
 
@@ -1254,7 +1365,7 @@ export default function App() {
                             key={game.id}
                             type="button"
                             className="dashboard-row"
-                            onClick={() => navigate({ page: "game", gameId: game.id })}
+                            onClick={() => openGameDetail(game.id)}
                           >
                             <div className="dashboard-row-head">
                               <span className="dashboard-swatch" style={{ backgroundColor: color }} />
@@ -1281,7 +1392,7 @@ export default function App() {
               </section>
 
               <section className="panel panel-wide">
-                <div className="panel-head"><h2>我的收藏</h2><Button onClick={() => navigate({ page: "library" })}>查看完整游戏库</Button></div>
+                <div className="panel-head"><h2>我的收藏</h2><Button onClick={() => navigate(getLibraryView())}>查看完整游戏库</Button></div>
                 {featuredOwnedGames.length > 0 ? (
                   <div className="card-grid">
                     {featuredOwnedGames.map((game) => (
@@ -1291,7 +1402,7 @@ export default function App() {
                         coverUrl={game.coverUrl}
                         badge={formatDuration(game.effectivePlaytime.totalMinutes)}
                         meta={`${formatSimpleDate(game.ownedAt)} 入库`}
-                        onClick={() => navigate({ page: "game", gameId: game.id })}
+                        onClick={() => openGameDetail(game.id)}
                       />
                     ))}
                   </div>
@@ -1331,7 +1442,7 @@ export default function App() {
                           key={game.id}
                           type="button"
                           className="dashboard-row ranking-row"
-                          onClick={() => navigate({ page: "game", gameId: game.id })}
+                          onClick={() => openGameDetail(game.id)}
                         >
                           <div className="dashboard-row-head ranking-row-head">
                             <div className="ranking-meta">
@@ -1374,14 +1485,14 @@ export default function App() {
                   <>
                     <div className="card-grid">
                       {ownedGames.map((game) => (
-                        <CoverCard
-                          key={game.id}
-                          title={getDisplayTitle(game, marketMode)}
-                          coverUrl={game.coverUrl}
-                          badge={formatDuration(game.effectivePlaytime.totalMinutes)}
-                          meta={`${formatSourceText(game.effectivePlaytime.source)} / ${formatSimpleDate(game.lastPlayedAt)}`}
-                          onClick={() => navigate({ page: "game", gameId: game.id })}
-                        />
+                      <CoverCard
+                        key={game.id}
+                        title={getDisplayTitle(game, marketMode)}
+                        coverUrl={game.coverUrl}
+                        badge={formatDuration(game.effectivePlaytime.totalMinutes)}
+                        meta={`${formatSourceText(game.effectivePlaytime.source)} / ${formatSimpleDate(game.lastPlayedAt)}`}
+                        onClick={() => openGameDetail(game.id)}
+                      />
                       ))}
                     </div>
                     {(summary?.totalGames ?? 0) > LIBRARY_OWNED_GAMES_PAGE_SIZE && (
@@ -1392,7 +1503,7 @@ export default function App() {
                           pageSize={LIBRARY_OWNED_GAMES_PAGE_SIZE}
                           showSizeChanger={false}
                           onChange={(page) => {
-                            fetchOwnedGames({ limit: LIBRARY_OWNED_GAMES_PAGE_SIZE, page }).catch(() => undefined);
+                            navigate(getLibraryView({ ownedPage: page }));
                           }}
                         />
                       </div>
@@ -1411,9 +1522,9 @@ export default function App() {
                       value={catalogQuery}
                       onChange={(event) => setCatalogQuery(event.target.value)}
                       placeholder="搜索 Mario、Zelda、Kirby..."
-                      onPressEnter={() => loadCurrentView({ page: "library" })}
+                      onPressEnter={() => navigate(getLibraryView({ catalogPage: 1, query: catalogQuery }))}
                     />
-                    <Button type="primary" onClick={() => loadCurrentView({ page: "library" })}>搜索</Button>
+                    <Button type="primary" onClick={() => navigate(getLibraryView({ catalogPage: 1, query: catalogQuery }))}>搜索</Button>
                   </div>
                 </div>
                 <div className="catalog-grid">
@@ -1425,7 +1536,7 @@ export default function App() {
                       badge={formatDisplayCurrency(item.priceAmount, item.priceCurrency, marketMode, fxContext)}
                       meta={item.isOwned ? "已在我的游戏库" : "点击查看详情后入库"}
                       owned={item.isOwned}
-                      onClick={() => navigate({ page: "catalog", externalId: item.externalId })}
+                      onClick={() => openCatalogDetail(item.externalId)}
                     />
                   ))}
                 </div>
@@ -1437,7 +1548,7 @@ export default function App() {
                       pageSize={catalogPageSize}
                       showSizeChanger={false}
                       onChange={(page) => {
-                        fetchCatalogPage({ query: catalogQuery, page }).catch(() => undefined);
+                        navigate(getLibraryView({ catalogPage: page }));
                       }}
                     />
                   </div>
@@ -1471,7 +1582,7 @@ export default function App() {
                 actions: (
                   <>
                     {catalogDetail!.ownedGame ? (
-                      <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail!.ownedGame!.id })}>
+                      <Button type="primary" onClick={() => openGameDetail(catalogDetail!.ownedGame!.id, catalogReturnView)}>
                         查看我的记录
                       </Button>
                     ) : (
@@ -1480,7 +1591,7 @@ export default function App() {
                       </Button>
                     )}
                     <a className="link-button" href={catalogDetail!.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>
-                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                    <Button onClick={goBackFromCatalogDetail}>返回上一级</Button>
                   </>
                 )
               })}
@@ -1503,12 +1614,12 @@ export default function App() {
                   <p>{getDisplayDescription(catalogDetail!, marketMode) ?? "该目录条目暂未拉到详情描述。你仍然可以先入库。"}</p>
                   <div className="row-actions">
                     {catalogDetail!.ownedGame ? (
-                      <Button type="primary" onClick={() => navigate({ page: "game", gameId: catalogDetail!.ownedGame!.id })}>查看我的记录</Button>
+                      <Button type="primary" onClick={() => openGameDetail(catalogDetail!.ownedGame!.id, catalogReturnView)}>查看我的记录</Button>
                     ) : (
                       <Button type="primary" onClick={() => addToLibrary(catalogDetail!.externalId)}>加入我的游戏库</Button>
                     )}
                     <a className="link-button" href={catalogDetail!.storeUrl} target="_blank" rel="noreferrer">打开商店页</a>
-                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                    <Button onClick={() => navigate(getLibraryView())}>返回游戏库</Button>
                   </div>
                 </div>
               </section>
@@ -1557,7 +1668,7 @@ export default function App() {
                         {removeConfirmOpen ? "确认移出" : "移出游戏库"}
                       </Button>
                     </Popconfirm>
-                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                    <Button onClick={goBackFromGameDetail}>返回上一级</Button>
                   </>
                 )
               })}
@@ -1591,7 +1702,6 @@ export default function App() {
                     </div>
                     <div className="detail-score-card detail-score-card-interactive">
                       <span>我的评分</span>
-                      <strong>{gamePlayerRating.userScore === null ? "点击星级评分" : `${formatScore(gamePlayerRating.userScore)} / 5`}</strong>
                       <Rate
                         value={gamePlayerRating.userScore ?? 0}
                         count={5}
@@ -1624,7 +1734,7 @@ export default function App() {
                         {removeConfirmOpen ? "确认移出" : "移出游戏库"}
                       </Button>
                     </Popconfirm>
-                    <Button onClick={() => navigate({ page: "library" })}>返回游戏库</Button>
+                    <Button onClick={() => navigate(getLibraryView())}>返回游戏库</Button>
                   </div>
                 </div>
               </section>

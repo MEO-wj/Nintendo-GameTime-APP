@@ -1,4 +1,4 @@
-import Koa from "koa";
+import Koa, { type Middleware } from "koa";
 import Router from "@koa/router";
 import bodyParser from "koa-bodyparser";
 import cors from "@koa/cors";
@@ -14,6 +14,16 @@ import { createGamesRouter } from "./routes/games.js";
 import { createCorrectionsRouter } from "./routes/corrections.js";
 import { createCatalogRouter } from "./routes/catalog.js";
 
+function registerMiddleware(app: Koa<AppState>, middleware: Middleware<AppState>) {
+  if (typeof middleware !== "function") {
+    throw new TypeError("middleware must be a function");
+  }
+
+  // Koa's generator detection trips on this Node/runtime combination.
+  app.middleware.push(middleware);
+  return app;
+}
+
 export async function createApp(input?: {
   deps?: AppDependencies;
 }): Promise<{ app: Koa<AppState>; deps: AppDependencies }> {
@@ -21,15 +31,16 @@ export async function createApp(input?: {
   const app = new Koa<AppState>();
   const root = new Router();
 
-  app.use(errorHandlerMiddleware);
-  app.use(
+  registerMiddleware(app, errorHandlerMiddleware);
+  registerMiddleware(
+    app,
     cors({
       origin: "*"
     })
   );
-  app.use(bodyParser());
+  registerMiddleware(app, bodyParser());
 
-  app.use(async (ctx, next) => {
+  registerMiddleware(app, async (ctx, next) => {
     const start = Date.now();
     await next();
     ctx.set("X-Response-Time", `${Date.now() - start}ms`);
@@ -50,14 +61,22 @@ export async function createApp(input?: {
   const correctionsRouter = createCorrectionsRouter(deps);
   const catalogRouter = createCatalogRouter(deps);
 
-  app.use(root.routes()).use(root.allowedMethods());
-  app.use(authRouter.routes()).use(authRouter.allowedMethods());
-  app.use(accountsRouter.routes()).use(accountsRouter.allowedMethods());
-  app.use(syncRouter.routes()).use(syncRouter.allowedMethods());
-  app.use(dashboardRouter.routes()).use(dashboardRouter.allowedMethods());
-  app.use(gamesRouter.routes()).use(gamesRouter.allowedMethods());
-  app.use(correctionsRouter.routes()).use(correctionsRouter.allowedMethods());
-  app.use(catalogRouter.routes()).use(catalogRouter.allowedMethods());
+  registerMiddleware(app, root.routes());
+  registerMiddleware(app, root.allowedMethods());
+  registerMiddleware(app, authRouter.routes());
+  registerMiddleware(app, authRouter.allowedMethods());
+  registerMiddleware(app, accountsRouter.routes());
+  registerMiddleware(app, accountsRouter.allowedMethods());
+  registerMiddleware(app, syncRouter.routes());
+  registerMiddleware(app, syncRouter.allowedMethods());
+  registerMiddleware(app, dashboardRouter.routes());
+  registerMiddleware(app, dashboardRouter.allowedMethods());
+  registerMiddleware(app, gamesRouter.routes());
+  registerMiddleware(app, gamesRouter.allowedMethods());
+  registerMiddleware(app, correctionsRouter.routes());
+  registerMiddleware(app, correctionsRouter.allowedMethods());
+  registerMiddleware(app, catalogRouter.routes());
+  registerMiddleware(app, catalogRouter.allowedMethods());
 
   return { app, deps };
 }

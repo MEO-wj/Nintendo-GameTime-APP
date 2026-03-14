@@ -257,7 +257,7 @@ const CATALOG_SEEDS: CatalogSeedEntry[] = [
 const CATALOG_LOCALIZATIONS: Record<string, CatalogLocalizations> = {
   "the-legend-of-zelda-breath-of-the-wild-switch": {
     zhHans: {
-      title: "萨尔达传说 旷野之息",
+      title: "塞尔达传说 旷野之息",
       description:
         "辽阔无垠的海拉鲁世界正等待你去探索。攀登高塔与山峰、挑战巨大敌人、狩猎与采集素材，在冒险中自由决定前进方式。"
     }
@@ -342,6 +342,25 @@ const CATALOG_LOCALIZATIONS: Record<string, CatalogLocalizations> = {
 };
 
 Object.assign(CATALOG_LOCALIZATIONS, CATALOG_LOCALIZATION_OVERRIDES);
+
+function resolveCatalogLocalizations(
+  externalId: string,
+  localizations: CatalogLocalizations = {}
+): CatalogLocalizations {
+  const override = CATALOG_LOCALIZATIONS[externalId];
+  if (!override?.zhHans) {
+    return localizations;
+  }
+
+  return {
+    ...localizations,
+    ...override,
+    zhHans: {
+      title: override.zhHans.title ?? localizations.zhHans?.title ?? "",
+      description: override.zhHans.description ?? localizations.zhHans?.description ?? null
+    }
+  };
+}
 
 interface CachedCatalogItem {
   expiresAt: number;
@@ -608,7 +627,7 @@ function mapCatalogRowToGame(row: CatalogGameRow): CatalogGame {
     priceCurrency: row.priceCurrency,
     platform: row.platform,
     region: row.region,
-    localizations: row.localizations
+    localizations: resolveCatalogLocalizations(row.externalId, row.localizations)
   };
 }
 
@@ -832,7 +851,7 @@ function createRepositoryCatalogService(repository: Repository): CatalogService 
       const rows = await repository.listCatalogGames();
       const filteredRows = query
         ? rows.filter((row) => {
-            const zhHansTitle = row.localizations.zhHans?.title ?? "";
+            const zhHansTitle = resolveCatalogLocalizations(row.externalId, row.localizations).zhHans?.title ?? "";
             return normalizeText(`${row.title} ${row.externalId} ${zhHansTitle}`).includes(query);
           })
         : rows;
