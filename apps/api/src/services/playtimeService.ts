@@ -5,6 +5,7 @@ import {
 } from "@nintendo-gametime/shared-types";
 import type { Repository } from "../repositories/types.js";
 import type { CatalogGame, CatalogLocalizations, CatalogService } from "./catalogService.js";
+import type { DashboardVisualizations, VisualizationService } from "./visualizationService.js";
 import { decodeCursor, encodeCursor } from "../utils/pagination.js";
 import { getCriticScore } from "./criticScoreData.js";
 
@@ -23,6 +24,7 @@ export interface DashboardSummary {
 export interface DashboardCharts {
   donut: Array<{ name: string; value: number; gameId: string }>;
   ranking: Array<{ gameId: string; name: string; minutes: number }>;
+  visualizations: DashboardVisualizations;
 }
 
 export interface ListedGame {
@@ -118,7 +120,11 @@ function getRecentCorrectionMinutes(
   );
 }
 
-export function createPlaytimeService(repository: Repository, catalogService: CatalogService): PlaytimeService {
+export function createPlaytimeService(
+  repository: Repository,
+  catalogService: CatalogService,
+  visualizationService: VisualizationService
+): PlaytimeService {
   function buildPlayerRating(input: {
     userScore: number | null;
     ratingCount: number;
@@ -298,7 +304,15 @@ export function createPlaytimeService(repository: Repository, catalogService: Ca
         value: entry.minutes,
         gameId: entry.gameId
       }));
-      return { donut, ranking };
+      const visualizations = await visualizationService.createDashboardVisualizations({
+        donut: donut.map((entry) => ({
+          gameId: entry.gameId,
+          name: entry.name,
+          minutes: entry.value
+        })),
+        ranking
+      });
+      return { donut, ranking, visualizations };
     },
 
     async listGames(input: {

@@ -8,6 +8,7 @@ import { createMarketService, type MarketService } from "./services/marketServic
 import { createNintendoClient, type NintendoClient } from "./services/nintendoClient.js";
 import { createPlaytimeService, type PlaytimeService } from "./services/playtimeService.js";
 import { createSyncService, type SyncService } from "./services/syncService.js";
+import { createVisualizationService, type VisualizationService } from "./services/visualizationService.js";
 
 export interface AppDependencies {
   env: AppEnv;
@@ -15,6 +16,7 @@ export interface AppDependencies {
   catalogService: CatalogService;
   marketService: MarketService;
   nintendoClient: NintendoClient;
+  visualizationService: VisualizationService;
   playtimeService: PlaytimeService;
   syncService: SyncService;
   close: () => Promise<void>;
@@ -39,6 +41,7 @@ export async function createAppDependencies(
   }
   const marketService = createMarketService();
   const nintendoClient = createNintendoClient(env);
+  const visualizationService = createVisualizationService(env);
   const alertService = new ConsoleAlertService();
   const syncService = createSyncService({
     env,
@@ -46,7 +49,7 @@ export async function createAppDependencies(
     nintendoClient,
     alertService
   });
-  const playtimeService = createPlaytimeService(repository, catalogService);
+  const playtimeService = createPlaytimeService(repository, catalogService, visualizationService);
   const catalogRefreshTimer =
     env.CATALOG_REFRESH_INTERVAL_MS > 0
       ? setInterval(() => {
@@ -64,6 +67,7 @@ export async function createAppDependencies(
     catalogService,
     marketService,
     nintendoClient,
+    visualizationService,
     playtimeService,
     syncService,
     close: async () => {

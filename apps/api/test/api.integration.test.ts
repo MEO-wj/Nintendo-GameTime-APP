@@ -17,7 +17,8 @@ describe("API integration", () => {
       NODE_ENV: "test",
       JWT_SECRET: "test_secret_1234567890",
       ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-      NINTENDO_MOCK: true
+      NINTENDO_MOCK: true,
+      R_VISUALIZATION_ENABLED: false
     });
     const deps = await createAppDependencies({
       env,
@@ -58,6 +59,17 @@ describe("API integration", () => {
       .set("Authorization", `Bearer ${token}`);
     expect(summaryRes.status).toBe(200);
     expect(summaryRes.body.totalGames).toBeGreaterThan(0);
+
+    const chartsRes = await request(appCallback)
+      .get("/api/dashboard/charts")
+      .query({ range: "30d" })
+      .set("Authorization", `Bearer ${token}`);
+    expect(chartsRes.status).toBe(200);
+    expect(chartsRes.body.ranking.length).toBeGreaterThan(0);
+    expect(chartsRes.body.visualizations.engine).toBe("typescript-fallback");
+    expect(chartsRes.body.visualizations.options.playtimeDonut.option.series[0].type).toBe("pie");
+    expect(chartsRes.body.visualizations.options.playtimeRanking.option.series[0].type).toBe("bar");
+    expect(chartsRes.body.visualizations.options.playtimeTreemap.option.series[0].type).toBe("treemap");
 
     const gamesRes = await request(appCallback)
       .get("/api/games")

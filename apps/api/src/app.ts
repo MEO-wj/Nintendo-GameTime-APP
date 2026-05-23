@@ -14,13 +14,13 @@ import { createGamesRouter } from "./routes/games.js";
 import { createCorrectionsRouter } from "./routes/corrections.js";
 import { createCatalogRouter } from "./routes/catalog.js";
 
-function registerMiddleware(app: Koa<AppState>, middleware: Middleware<AppState>) {
+function registerMiddleware(app: Koa<AppState>, middleware: unknown) {
   if (typeof middleware !== "function") {
     throw new TypeError("middleware must be a function");
   }
 
   // Koa's generator detection trips on this Node/runtime combination.
-  app.middleware.push(middleware);
+  app.middleware.push(middleware as Middleware<AppState>);
   return app;
 }
 
@@ -40,11 +40,12 @@ export async function createApp(input?: {
   );
   registerMiddleware(app, bodyParser());
 
-  registerMiddleware(app, async (ctx, next) => {
+  const responseTimeMiddleware: Middleware<AppState> = async (ctx, next) => {
     const start = Date.now();
     await next();
     ctx.set("X-Response-Time", `${Date.now() - start}ms`);
-  });
+  };
+  registerMiddleware(app, responseTimeMiddleware);
 
   root.get("/healthz", (ctx) => {
     ctx.body = {

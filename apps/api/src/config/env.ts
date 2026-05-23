@@ -19,7 +19,10 @@ const envSchema = z.object({
   API_BASE_URL: z.string().default("http://localhost:4000"),
   SYNC_INTERVAL_MS: z.coerce.number().default(300000),
   CATALOG_REFRESH_INTERVAL_MS: z.coerce.number().default(21600000),
-  ALERT_FAIL_THRESHOLD: z.coerce.number().default(3)
+  ALERT_FAIL_THRESHOLD: z.coerce.number().default(3),
+  R_VISUALIZATION_ENABLED: z.coerce.boolean().default(true),
+  R_VISUALIZATION_BIN: z.string().default("Rscript"),
+  R_VISUALIZATION_TIMEOUT_MS: z.coerce.number().default(3000)
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
