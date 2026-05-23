@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Rate, Select, Spin, message } from "antd";
+import ReactECharts from "echarts-for-react";
 import { api, clearToken, getToken, saveToken } from "./api";
 import "./App.css";
 
@@ -35,6 +36,32 @@ interface DashboardSummary {
   recent30Minutes: number;
   lastSyncAt: string | null;
   dataSource: Record<PlaytimeSource, number>;
+}
+
+interface DashboardChartOption {
+  title: string;
+  option: Record<string, unknown>;
+}
+
+interface DashboardCharts {
+  donut: Array<{ name: string; value: number; gameId: string }>;
+  ranking: Array<{ gameId: string; name: string; minutes: number }>;
+  visualizations?: {
+    engine: "r-echarts4r" | "typescript-fallback";
+    generatedAt: string;
+    warning?: string;
+    options: {
+      playtimeDonut: DashboardChartOption;
+      playtimeRanking: DashboardChartOption;
+      playtimeTreemap: DashboardChartOption;
+    };
+  };
+}
+
+interface EChartsClickParams {
+  data?: {
+    gameId?: string;
+  };
 }
 
 interface EffectivePlaytime {
@@ -186,6 +213,15 @@ const PLAYTIME_PALETTE = [
   "#8753c7",
   "#c0508f"
 ];
+const DASHBOARD_TITLE_OVERRIDES: Record<string, string> = {
+  "The Legend of Zelda™: Breath of the Wild": "塞尔达传说 旷野之息",
+  "The Legend of Zelda: Breath of the Wild": "塞尔达传说 旷野之息",
+  "Super Mario Odyssey": "超级马力欧 奥德赛",
+  "Hollow Knight": "空洞骑士",
+  "Dead Cells": "死亡细胞",
+  "Manual Tracked Game": "手动记录游戏",
+  "Uncharted 4: A Thief's End": "神秘海域4 盗贼末路"
+};
 const DEFAULT_PLAYER_RATING = {
   userScore: null,
   averageScore: null,
@@ -337,6 +373,20 @@ function getDisplayTitle(
   return input.title;
 }
 
+function getDashboardTitle(input: { title: string; localizations?: GameLocalizations | null }, marketMode: MarketMode): string {
+  const displayTitle = getDisplayTitle(input, marketMode);
+  return DASHBOARD_TITLE_OVERRIDES[displayTitle] ?? DASHBOARD_TITLE_OVERRIDES[input.title] ?? displayTitle;
+}
+
+function RankBadge(input: { rank: number; className?: string }) {
+  const rankClass = input.rank <= 3 ? ` rank-badge-medal rank-badge-medal-${input.rank}` : "";
+  return (
+    <span className={`rank-badge${rankClass}${input.className ? ` ${input.className}` : ""}`} aria-label={`第 ${input.rank} 名`}>
+      <span>{input.rank}</span>
+    </span>
+  );
+}
+
 function getDisplayDescription(
   input: { description: string | null; localizations?: GameLocalizations | null },
   marketMode: MarketMode
@@ -349,6 +399,39 @@ function getDisplayDescription(
 
 function getPlaytimeColor(index: number): string {
   return PLAYTIME_PALETTE[index % PLAYTIME_PALETTE.length];
+}
+
+function getHourValue(minutes: number): number {
+  return Math.round((minutes / 60) * 10) / 10;
+}
+
+function enhanceChartOption(option: Record<string, unknown> | undefined): Record<string, unknown> | null {
+  if (!option) return null;
+  const enhancedOption: Record<string, unknown> = {
+    animationDuration: 900,
+    animationEasing: "cubicOut",
+    animationDurationUpdate: 700,
+    animationEasingUpdate: "cubicInOut",
+    ...option
+  };
+
+  const tooltip =
+    typeof option.tooltip === "object" && option.tooltip !== null ? (option.tooltip as Record<string, unknown>) : null;
+
+  if (tooltip) {
+    enhancedOption.tooltip = {
+      renderMode: "html",
+      appendToBody: true,
+      transitionDuration: 0.12,
+      className: "dashboard-echart-tooltip",
+      ...tooltip,
+      extraCssText: `z-index: 99999; pointer-events: none; ${
+        typeof tooltip.extraCssText === "string" ? tooltip.extraCssText : ""
+      }`.trim()
+    };
+  };
+
+  return enhancedOption;
 }
 
 function parsePositiveInt(value: string | null, fallback: number): number {
@@ -659,6 +742,7 @@ export default function App() {
   const [ratingLoading, setRatingLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [dashboardCharts, setDashboardCharts] = useState<DashboardCharts | null>(null);
   const [ownedGames, setOwnedGames] = useState<OwnedGame[]>([]);
   const [topGames, setTopGames] = useState<OwnedGame[]>([]);
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([]);
@@ -730,6 +814,148 @@ export default function App() {
     });
     return `conic-gradient(${segments.join(", ")})`;
   }, [dashboardGames, dashboardTotalMinutes]);
+  const dashboardDonutOption = useMemo(() => {
+    if (dashboardGames.length === 0) return null;
+    const topData = dashboardGames.filter((game) => game.effectivePlaytime.totalMinutes > 0).map((game, index) => {
+      const minutes = game.effectivePlaytime.totalMinutes;
+      return {
+        name: getDashboardTitle(game, marketMode),
+        value: minutes,
+        gameId: game.id,
+        hours: getHourValue(minutes),
+        itemStyle: {
+          color: getPlaytimeColor(index),
+          shadowColor: `${getPlaytimeColor(index)}66`,
+          shadowBlur: 18,
+          borderColor: "#fff7ef",
+          borderWidth: 4
+        }
+      };
+    });
+
+    return enhanceChartOption({
+      backgroundColor: "transparent",
+      color: PLAYTIME_PALETTE,
+      tooltip: {
+        trigger: "item",
+        borderWidth: 0,
+        padding: [10, 12],
+        backgroundColor: "rgba(36, 24, 18, 0.88)",
+        textStyle: { color: "#fff7ef", fontSize: 13 },
+        formatter: (params: { name: string; percent: number; data?: { hours?: number } }) =>
+          `${params.name}<br/>游玩 ${params.data?.hours ?? 0} 小时 · 占比 ${Math.round(params.percent)}%`
+      },
+      legend: {
+        data: topData.map((item) => item.name),
+        bottom: 4,
+        left: "center",
+        icon: "roundRect",
+        itemWidth: 14,
+        itemHeight: 9,
+        textStyle: {
+          color: "#625347",
+          fontSize: 12
+        },
+        formatter: (name: string) => (name.length > 13 ? `${name.slice(0, 13)}…` : name)
+      },
+      series: [
+        {
+          name: "能量外环",
+          type: "pie",
+          silent: true,
+          tooltip: { show: false },
+          legendHoverLink: false,
+          radius: ["80%", "82%"],
+          center: ["50%", "50%"],
+          label: { show: false },
+          labelLine: { show: false },
+          data: [
+            {
+              value: 100,
+              name: "能量外环",
+              itemStyle: {
+                color: "rgba(178, 74, 40, 0.18)",
+                borderColor: "rgba(255, 247, 239, 0.8)",
+                borderWidth: 1,
+                shadowColor: "rgba(178, 74, 40, 0.18)",
+                shadowBlur: 22
+              }
+            }
+          ]
+        },
+        {
+          name: "游玩时长",
+          type: "pie",
+          radius: ["44%", "68%"],
+          center: ["50%", "50%"],
+          startAngle: 88,
+          minAngle: 6,
+          padAngle: 4,
+          avoidLabelOverlap: true,
+          itemStyle: {
+            borderRadius: 16
+          },
+          label: {
+            color: "#2d1e18",
+            fontSize: 12,
+            formatter: (params: { name: string; percent: number }) =>
+              `${params.name.length > 8 ? `${params.name.slice(0, 8)}…` : params.name}\n${Math.round(params.percent)}%`
+          },
+          labelLine: {
+            length: 18,
+            length2: 20,
+            lineStyle: {
+              width: 1.4
+            }
+          },
+          emphasis: {
+            scale: true,
+            scaleSize: 13,
+            itemStyle: {
+              shadowBlur: 28,
+              shadowColor: "rgba(57, 35, 16, 0.24)"
+            }
+          },
+          data: topData
+        },
+        {
+          name: "中心护盾",
+          type: "pie",
+          silent: true,
+          tooltip: { show: false },
+          legendHoverLink: false,
+          radius: ["28%", "34%"],
+          center: ["50%", "50%"],
+          label: { show: false },
+          labelLine: { show: false },
+          data: [
+            {
+              value: 100,
+              name: "中心护盾",
+              itemStyle: {
+                color: "rgba(255, 248, 241, 0.9)",
+                borderColor: "rgba(178, 74, 40, 0.16)",
+                borderWidth: 2,
+                shadowBlur: 18,
+                shadowColor: "rgba(87, 43, 24, 0.1)"
+              }
+            }
+          ]
+        }
+      ]
+    });
+  }, [dashboardGames, marketMode]);
+  const dashboardChartEvents = useMemo(
+    () => ({
+      click: (params: EChartsClickParams) => {
+        const gameId = params.data?.gameId;
+        if (gameId) {
+          openGameDetail(gameId);
+        }
+      }
+    }),
+    []
+  );
 
   function getLibraryView(input?: Partial<LibraryView>): LibraryView {
     const base = view.page === "library" ? view : lastLibraryView;
@@ -871,6 +1097,11 @@ export default function App() {
     setSummary(response.data);
   }
 
+  async function fetchDashboardCharts() {
+    const response = await api.get<DashboardCharts>("/api/dashboard/charts", { params: { range: "30d" } });
+    setDashboardCharts(response.data);
+  }
+
   async function fetchSyncStatus() {
     const response = await api.get<{ status: SyncStatus | null }>("/api/sync/status");
     setSyncStatus(response.data.status);
@@ -899,11 +1130,16 @@ export default function App() {
     setErrorText(null);
     try {
       if (nextView.page === "home") {
-        await Promise.all([fetchSummary(), fetchOwnedGames({ limit: HOME_OWNED_GAMES_LIMIT, page: 1 }), fetchTopGames()]);
+        await Promise.all([
+          fetchSummary(),
+          fetchDashboardCharts(),
+          fetchOwnedGames({ limit: HOME_OWNED_GAMES_LIMIT, page: 1 }),
+          fetchTopGames()
+        ]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "ranking") {
-        await Promise.all([fetchSummary(), fetchTopGames()]);
+        await Promise.all([fetchSummary(), fetchDashboardCharts(), fetchTopGames()]);
         setGameDetail(null);
         setCatalogDetail(null);
       } else if (nextView.page === "library") {
@@ -1172,6 +1408,7 @@ export default function App() {
     setToken(null);
     setUser(null);
     setSummary(null);
+    setDashboardCharts(null);
     setOwnedGames([]);
     setTopGames([]);
     setCatalogItems([]);
@@ -1325,36 +1562,65 @@ export default function App() {
                   </div>
                 </div>
                 {dashboardGames.length > 0 ? (
-                  <div className="dashboard-layout">
-                    <div className="dashboard-ring-wrap">
-                      <div className="dashboard-ring" style={{ background: dashboardRing }}>
-                        <div className="dashboard-ring-core">
-                          <span>累计时长</span>
+                  <div className="dashboard-arcade">
+                    <div className="dashboard-stage">
+                      <div className="dashboard-chart-card dashboard-orbit-card">
+                        <div className="dashboard-orbit-glow" />
+                        {dashboardDonutOption ? (
+                          <ReactECharts
+                            option={dashboardDonutOption}
+                            className="dashboard-echart dashboard-echart-donut"
+                            onEvents={dashboardChartEvents}
+                          />
+                        ) : (
+                          <div className="dashboard-ring" style={{ background: dashboardRing }}>
+                            <div className="dashboard-ring-core">
+                              <span>累计时长</span>
+                              <strong>{formatDuration(dashboardTotalMinutes)}</strong>
+                              <em>当前展示 {dashboardGames.length} 款</em>
+                            </div>
+                          </div>
+                        )}
+                        <div className="dashboard-core-readout">
+                          <span>时长核心</span>
                           <strong>{formatDuration(dashboardTotalMinutes)}</strong>
-                          <em>当前展示 {dashboardGames.length} 款</em>
+                          <em>{dashboardCharts?.visualizations?.engine === "r-echarts4r" ? "R 生成图表" : "交互图表"}</em>
                         </div>
                       </div>
-                      <div className="dashboard-mini-grid">
-                        <div className="dashboard-mini-card">
-                          <span>近 30 天</span>
-                          <strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong>
+
+                      <div className="dashboard-command-panel">
+                        <div
+                          className="dashboard-featured-cover"
+                          style={{ backgroundImage: toBackgroundImage(dashboardGames[0].coverUrl, "hero") }}
+                        >
+                          <div>
+                            <span>游玩冠军</span>
+                            <strong>{getDashboardTitle(dashboardGames[0], marketMode)}</strong>
+                            <em>{formatDuration(dashboardGames[0].effectivePlaytime.totalMinutes)}</em>
+                          </div>
                         </div>
-                        <div className="dashboard-mini-card">
-                          <span>最近同步</span>
-                          <strong>{formatSimpleDate(summary?.lastSyncAt ?? null)}</strong>
-                        </div>
-                        <div className="dashboard-mini-card">
-                          <span>官方来源</span>
-                          <strong>{summary?.dataSource.official ?? 0}</strong>
-                        </div>
-                        <div className="dashboard-mini-card">
-                          <span>修正 / 手动</span>
-                          <strong>{(summary?.dataSource.corrected ?? 0) + (summary?.dataSource["manual-only"] ?? 0)}</strong>
+                        <div className="dashboard-mini-grid dashboard-mini-grid-premium">
+                          <div className="dashboard-mini-card">
+                            <span>近 30 天</span>
+                            <strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong>
+                          </div>
+                          <div className="dashboard-mini-card">
+                            <span>最近同步</span>
+                            <strong>{formatSimpleDate(summary?.lastSyncAt ?? null)}</strong>
+                          </div>
+                          <div className="dashboard-mini-card">
+                            <span>官方来源</span>
+                            <strong>{summary?.dataSource.official ?? 0}</strong>
+                          </div>
+                          <div className="dashboard-mini-card">
+                            <span>修正 / 手动</span>
+                            <strong>{(summary?.dataSource.corrected ?? 0) + (summary?.dataSource["manual-only"] ?? 0)}</strong>
+                          </div>
                         </div>
                       </div>
                     </div>
 
-                    <div className="dashboard-list">
+                    <div className="dashboard-list dashboard-boss-list">
                       {dashboardGames.map((game, index) => {
                         const minutes = game.effectivePlaytime.totalMinutes;
                         const share = dashboardTotalMinutes > 0 ? Math.round((minutes / dashboardTotalMinutes) * 100) : 0;
@@ -1364,17 +1630,19 @@ export default function App() {
                           <button
                             key={game.id}
                             type="button"
-                            className="dashboard-row"
+                            className="dashboard-row dashboard-boss-row"
                             onClick={() => openGameDetail(game.id)}
+                            style={{ "--row-color": color } as CSSProperties}
                           >
                             <div className="dashboard-row-head">
+                              <RankBadge rank={index + 1} />
                               <span className="dashboard-swatch" style={{ backgroundColor: color }} />
-                              <strong>{getDisplayTitle(game, marketMode)}</strong>
+                              <strong>{getDashboardTitle(game, marketMode)}</strong>
                               <span>{formatDuration(minutes)} / {share}%</span>
                             </div>
-                            <div className="dashboard-bar-track">
+                            <div className="dashboard-bar-track dashboard-boss-track">
                               <div
-                                className="dashboard-bar-fill"
+                                className="dashboard-bar-fill dashboard-boss-fill"
                                 style={{
                                   width: `${width}%`,
                                   background: `linear-gradient(90deg, ${color}, ${color}cc)`
@@ -1385,6 +1653,7 @@ export default function App() {
                         );
                       })}
                     </div>
+
                   </div>
                 ) : (
                   <div className="empty-block">游戏入库后，这里会用彩色仪表盘展示每款游戏的时长占比。</div>
@@ -1446,7 +1715,7 @@ export default function App() {
                         >
                           <div className="dashboard-row-head ranking-row-head">
                             <div className="ranking-meta">
-                              <span className="ranking-index">#{index + 1}</span>
+                              <RankBadge rank={index + 1} />
                               <span className="dashboard-swatch" style={{ backgroundColor: color }} />
                             </div>
                             <strong>{getDisplayTitle(game, marketMode)}</strong>
