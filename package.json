@@ -4,13 +4,13 @@
   "private": true,
   "packageManager": "pnpm@9.15.9",
   "scripts": {
-    "dev": "pnpm --parallel --filter @nintendo-gametime/backend --filter @nintendo-gametime/web --filter @nintendo-gametime/backend-worker dev",
-    "dev:api": "pnpm --filter @nintendo-gametime/backend dev",
+    "dev": "pnpm --parallel --filter @nintendo-gametime/web --filter @nintendo-gametime/backend-worker dev",
+    "dev:api": "cd backend && go run ./cmd/server/",
     "dev:web": "pnpm --filter @nintendo-gametime/web dev",
     "dev:worker": "pnpm --filter @nintendo-gametime/backend-worker dev",
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "build:api": "cd backend && go build -o server.exe ./cmd/server/",
+    "build:web": "pnpm --filter @nintendo-gametime/web build",
+    "build": "pnpm build:api && pnpm -r --filter './packages/*' build && pnpm build:web",
+    "test": "cd backend && go test ./..."
   }
 }
