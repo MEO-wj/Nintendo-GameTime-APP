@@ -7,8 +7,9 @@ coverage
 .env.*
 !.env.example
 pnpm-lock.yaml
-apps/web/android
-apps/web/ios
+frontend/web/android
+frontend/web/ios
 artifacts/
 *.log
 *.err
+.claude/

@@ -1,3 +1,5 @@
 packages:
-  - apps/*
+  - backend
+  - backend/worker
+  - frontend/*
   - packages/*
