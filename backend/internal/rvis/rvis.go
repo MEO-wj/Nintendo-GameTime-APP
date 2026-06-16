@@ -25,6 +25,44 @@ type ChartOutput struct {
 	Treemap interface{} `json:"treemap,omitempty"`
 }
 
+// RenderPriceMap generates an interactive leaflet map HTML for regional prices.
+func (s *Service) RenderPriceMap(prices interface{}, title string) (string, error) {
+	if !s.cfg.REnabled {
+		return "", fmt.Errorf("R visualization disabled")
+	}
+
+	input := map[string]interface{}{
+		"prices": prices,
+		"title":  title,
+	}
+	inputJSON, err := json.Marshal(input)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal price data: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.RTimeout*2)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, s.cfg.RBin, "scripts/r/render_price_map.R")
+	cmd.Stdin = bytes.NewReader(inputJSON)
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("R script failed: %v\nstderr: %s", err, stderr.String())
+	}
+
+	var result struct {
+		HTML string `json:"html"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		return "", fmt.Errorf("failed to parse R output: %w", err)
+	}
+	return result.HTML, nil
+}
+
 // Render attempts R visualization, falling back to raw data on failure.
 func (s *Service) Render(donut, ranking interface{}) (interface{}, error) {
 	if !s.cfg.REnabled {
@@ -43,7 +81,7 @@ func (s *Service) Render(donut, ranking interface{}) (interface{}, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), s.cfg.RTimeout)
 	defer cancel()
 
-	scriptPath := "scripts/render_dashboard_charts.R"
+	scriptPath := "scripts/r/render_dashboard_charts.R"
 	cmd := exec.CommandContext(ctx, s.cfg.RBin, scriptPath)
 	cmd.Stdin = bytes.NewReader(inputJSON)
 
