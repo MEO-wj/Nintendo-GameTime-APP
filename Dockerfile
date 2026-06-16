@@ -1,5 +1,5 @@
 # ---- Go API build ----
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /app
 COPY backend/go.mod backend/go.sum ./backend/
 RUN cd backend && go mod download
@@ -11,7 +11,7 @@ FROM node:22-alpine AS web-builder
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 RUN printf 'node-linker=hoisted\nlink-workspace-packages=true\n' > .npmrc
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY frontend/web/package.json frontend/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 RUN pnpm install --frozen-lockfile
@@ -28,7 +28,7 @@ FROM node:22-alpine AS worker-builder
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 WORKDIR /app
 RUN printf 'node-linker=hoisted\nlink-workspace-packages=true\n' > .npmrc
-COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
 COPY backend/worker/package.json backend/worker/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
 RUN pnpm install --frozen-lockfile
@@ -40,8 +40,8 @@ RUN sed -i 's|"import": "./src/index.ts"|"import": "./dist/index.js"|' packages/
 RUN pnpm --filter @nintendo-gametime/backend-worker build
 
 # ---- api (Go production) ----
-FROM alpine:3.20 AS api
-RUN apk add --no-cache ca-certificates R R-dev
+# Requires pre-built R base: docker build -f Dockerfile.r-base -t nintendogametime-r-base .
+FROM nintendogametime-r-base AS api
 WORKDIR /app
 COPY --from=go-builder /api-server ./api-server
 COPY backend/scripts/ ./scripts/

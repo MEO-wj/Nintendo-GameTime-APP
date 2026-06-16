@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:4000";
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 const TOKEN_KEY = "nintendo_gametime_token";
 
 export const api = axios.create({
@@ -14,6 +14,17 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      window.localStorage.removeItem(TOKEN_KEY);
+      window.location.reload();
+    }
+    return Promise.reject(error);
+  }
+);
 
 export function saveToken(token: string) {
   window.localStorage.setItem(TOKEN_KEY, token);

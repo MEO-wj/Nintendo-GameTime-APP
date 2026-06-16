@@ -1,0 +1,19 @@
+# Pre-built R visualization base image
+# Build once: docker build -f Dockerfile.r-base -t nintendogametime-r-base .
+# Then the main Dockerfile uses this as base, skipping R package compilation
+FROM alpine:3.19
+
+RUN echo "https://dl-cdn.alpinelinux.org/alpine/edge/testing" >> /etc/apk/repositories && \
+    apk add --no-cache ca-certificates R R-dev g++ gcc make cmake pandoc \
+    libuv-dev linux-headers expat-dev \
+    udunits-dev geos-dev proj-dev gdal-dev
+
+# Install MASS from CRAN Archive (R 4.3.1 compatibility)
+RUN wget -qO /tmp/MASS.tar.gz "https://cran.r-project.org/src/contrib/Archive/MASS/MASS_7.3-60.tar.gz" && \
+    Rscript -e "install.packages('/tmp/MASS.tar.gz', repos=NULL, type='source')" && \
+    rm -f /tmp/MASS.tar.gz
+
+COPY backend/scripts/r/install_visualization_packages.R /tmp/install_packages.R
+RUN Rscript /tmp/install_packages.R && rm /tmp/install_packages.R
+
+RUN echo "R base image ready"

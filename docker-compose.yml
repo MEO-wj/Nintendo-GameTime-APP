@@ -41,6 +41,7 @@ services:
       R_VISUALIZATION_ENABLED: "true"
       R_VISUALIZATION_BIN: "Rscript"
       R_VISUALIZATION_TIMEOUT_MS: "3000"
+      RAWG_API_KEY: ""
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,6 +72,7 @@ services:
       NODE_ENV: production
       API_BASE_URL: http://api:4000
       SYNC_INTERVAL_MS: "300000"
+      CATALOG_REFRESH_MS: "1800000"
       INTERNAL_SYNC_TOKEN: internal_sync_token_change_me
     depends_on:
       api:
