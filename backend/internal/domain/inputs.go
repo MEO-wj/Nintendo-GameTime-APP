@@ -29,5 +29,6 @@ type UpsertCatalogGameInput struct {
 	Region        string
 	Source        string
 	Localizations json.RawMessage
+	CriticScore   *int
 	LastSyncedAt  string
 }

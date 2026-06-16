@@ -74,6 +74,7 @@ type CatalogGameRow struct {
 	Region       string          `json:"region"`
 	Source       string          `json:"source"`
 	Localizations json.RawMessage `json:"localizations"`
+	CriticScore  *int            `json:"criticScore,omitempty"`
 	LastSyncedAt time.Time       `json:"lastSyncedAt"`
 	CreatedAt    time.Time       `json:"createdAt"`
 	UpdatedAt    time.Time       `json:"updatedAt"`
@@ -95,6 +96,7 @@ type CorrectionRow struct {
 	Type      string     `json:"type"` // "SET_TOTAL" or "ADD_DELTA"
 	Minutes   int        `json:"minutes"`
 	Reason    string     `json:"reason"`
+	Date      *string    `json:"date,omitempty"` // YYYY-MM-DD or nil
 	CreatedAt time.Time  `json:"createdAt"`
 	RevokedAt *time.Time `json:"revokedAt,omitempty"`
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
@@ -164,6 +166,23 @@ type EshopRegion struct {
 	Country  string `json:"country"`
 	Label    string `json:"label"`
 	Currency string `json:"currency"`
+}
+
+var SupportedRegions = []EshopRegion{
+	{Code: "HK", Country: "香港", Label: "港区", Currency: "HKD"},
+	{Code: "JP", Country: "日本", Label: "日区", Currency: "JPY"},
+	{Code: "US", Country: "美国", Label: "美区", Currency: "USD"},
+	{Code: "GB", Country: "英国", Label: "英区", Currency: "GBP"},
+	{Code: "DE", Country: "德国", Label: "德区", Currency: "EUR"},
+	{Code: "AU", Country: "澳大利亚", Label: "澳区", Currency: "AUD"},
+	{Code: "KR", Country: "韩国", Label: "韩区", Currency: "KRW"},
+	{Code: "BR", Country: "巴西", Label: "巴西区", Currency: "BRL"},
+	{Code: "MX", Country: "墨西哥", Label: "墨区", Currency: "MXN"},
+}
+
+var RegionLangMap = map[string]string{
+	"HK": "zh", "JP": "ja", "US": "en", "GB": "en",
+	"DE": "de", "AU": "en", "KR": "ko", "BR": "pt", "MX": "es",
 }
 
 // ─── Playtime calculation ────────────────────────────────────────
