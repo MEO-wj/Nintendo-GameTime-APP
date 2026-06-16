@@ -17,8 +17,9 @@ type Config struct {
 	OTPExpiresMin  int
 	OTPDevCode     string
 	InternalToken  string
-	NintendoMock   bool
-	APIBaseURL     string
+	NintendoMock       bool
+	NintendoRedirectURI string
+	APIBaseURL         string
 	SMTPHost       string
 	SMTPPort       int
 	SMTPUser       string
@@ -36,6 +37,7 @@ type Config struct {
 	CrawlerBatchLimit     int
 	CatalogRefreshInt     time.Duration
 	AlertFailThreshold    int
+	RAWGAPIKey            string
 }
 
 func Load() *Config {
@@ -49,7 +51,8 @@ func Load() *Config {
 		OTPExpiresMin:  envInt("OTP_EXPIRES_MINUTES", 10),
 		OTPDevCode:     envStr("OTP_DEV_CODE", "000000"),
 		InternalToken:  envStr("INTERNAL_SYNC_TOKEN", "internal_sync_token_change_me"),
-		NintendoMock:   envBool("NINTENDO_MOCK", true),
+		NintendoMock:       envBool("NINTENDO_MOCK", true),
+		NintendoRedirectURI: envStr("NINTENDO_REDIRECT_URI", ""),
 		APIBaseURL:     envStr("API_BASE_URL", "http://localhost:4000"),
 		SMTPHost:       envStr("SMTP_HOST", ""),
 		SMTPPort:       envInt("SMTP_PORT", 587),
@@ -67,6 +70,7 @@ func Load() *Config {
 		CrawlerBatchLimit:      envInt("CRAWLER_BATCH_LIMIT", 50),
 		CatalogRefreshInt:      time.Duration(envInt("CATALOG_REFRESH_INTERVAL_MS", 21600000)) * time.Millisecond,
 		AlertFailThreshold:     envInt("ALERT_FAIL_THRESHOLD", 3),
+		RAWGAPIKey:             envStr("RAWG_API_KEY", ""),
 	}
 }
 

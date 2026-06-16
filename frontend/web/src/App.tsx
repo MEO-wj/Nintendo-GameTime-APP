@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { Alert, Button, Form, Input, InputNumber, Pagination, Popconfirm, Rate, Select, Spin, message } from "antd";
+import { Alert, Button, DatePicker, Form, Input, InputNumber, Pagination, Popconfirm, Rate, Select, Spin, message } from "antd";
+import dayjs from "dayjs";
 import ReactECharts from "echarts-for-react";
 import { api, clearToken, getToken, saveToken } from "./api";
+import { IconCalendar, IconClock, IconGamepad, IconPrice } from "./icons";
 import "./App.css";
 
 type CorrectionType = "SET_TOTAL" | "ADD_DELTA";
@@ -117,6 +119,7 @@ interface CorrectionItem {
   type: CorrectionType;
   minutes: number;
   reason: string;
+  date: string | null;
   createdAt: string;
   revokedAt: string | null;
 }
@@ -408,10 +411,17 @@ function getDashboardTitle(input: { title: string; localizations?: GameLocalizat
   return DASHBOARD_TITLE_OVERRIDES[displayTitle] ?? DASHBOARD_TITLE_OVERRIDES[input.title] ?? displayTitle;
 }
 
+const RANK_COLORS = ["#d05b3b", "#d49d32", "#3d8c7d", "#3b6fd0", "#8753c7", "#c0508f"];
+
 function RankBadge(input: { rank: number; className?: string }) {
-  const rankClass = input.rank <= 3 ? ` rank-badge-medal rank-badge-medal-${input.rank}` : "";
+  const isTop = input.rank <= 3;
+  const color = RANK_COLORS[(input.rank - 1) % RANK_COLORS.length];
   return (
-    <span className={`rank-badge${rankClass}${input.className ? ` ${input.className}` : ""}`} aria-label={`第 ${input.rank} 名`}>
+    <span
+      className={`rank-badge${input.className ? ` ${input.className}` : ""}`}
+      style={isTop ? { background: color, borderColor: color, color: "#fff", boxShadow: `0 2px 10px ${color}55` } : undefined}
+      aria-label={`第 ${input.rank} 名`}
+    >
       <span>{input.rank}</span>
     </span>
   );
@@ -802,7 +812,7 @@ function buildRegionalPriceChartOption(prices: RegionalPrice[], fxContext: FxCon
   };
 }
 
-function RegionalPriceChart({ prices, loading, cheapestRegion: _cheapestRegion, fxContext }: { prices: RegionalPrice[] | null; loading: boolean; cheapestRegion: string | null; fxContext: FxContext | null }) {
+function RegionalPriceChart({ prices, loading, cheapestRegion: _cheapestRegion, fxContext, priceMapHtml }: { prices: RegionalPrice[] | null; loading: boolean; cheapestRegion: string | null; fxContext: FxContext | null; priceMapHtml: string | null }) {
   const chartOption = useMemo(
     () => (prices && prices.length > 0 ? buildRegionalPriceChartOption(prices, fxContext) : null),
     [prices, fxContext]
@@ -830,9 +840,6 @@ function RegionalPriceChart({ prices, loading, cheapestRegion: _cheapestRegion, 
   };
   const sorted = [...prices].sort((a, b) => toCny(a) - toCny(b));
   const cheapest = sorted[0];
-  const mostExpensive = sorted[sorted.length - 1];
-  const cheapestCny = cheapest ? toCny(cheapest) : 0;
-  const expensiveCny = mostExpensive ? toCny(mostExpensive) : 0;
 
   return (
     <section className="panel panel-wide price-chart-panel">
@@ -847,22 +854,18 @@ function RegionalPriceChart({ prices, loading, cheapestRegion: _cheapestRegion, 
           </span>
         )}
       </div>
-      <div className="price-summary-row">
-        <div className="price-summary-item">
-          <span className="price-summary-label">最低</span>
-          <span className="price-summary-value accent">{formatCNY(cheapestCny)}</span>
-        </div>
-        <div className="price-summary-item">
-          <span className="price-summary-label">最高</span>
-          <span className="price-summary-value">{formatCNY(expensiveCny)}</span>
-        </div>
-        <div className="price-summary-item">
-          <span className="price-summary-label">区域</span>
-          <span className="price-summary-value">{prices.length} 个</span>
-        </div>
-      </div>
-      <ReactECharts option={chartOption!} className="price-echart" style={{ height: Math.max(200, prices.length * 48 + 16) }} />
-      <span className="price-chart-note">价格已换算为人民币 (CNY)，打折区域以红色标注</span>
+      {priceMapHtml ? (
+        <iframe
+          srcDoc={priceMapHtml}
+          className="price-map-iframe"
+          title="eShop 世界价格地图"
+          sandbox="allow-scripts"
+          style={{ width: "100%", height: 460, border: "none", borderRadius: 12 }}
+        />
+      ) : (
+        <ReactECharts option={chartOption!} className="price-echart" style={{ height: Math.max(200, prices.length * 48 + 16) }} />
+      )}
+      <span className="price-chart-note">{priceMapHtml ? "交互地图 · 点击标记查看价格详情" : "价格已换算为人民币 (CNY)，打折区域以红色标注"}</span>
     </section>
   );
 }
@@ -1058,6 +1061,56 @@ function PrecisionScoreInput(input: {
   );
 }
 
+function AvatarMenu(input: { nickname: string; email: string; avatarUrl: string | null; lastSync: string; onAccount: () => void; onLogout: () => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const initial = (input.nickname || "?" ).charAt(0).toUpperCase();
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [open]);
+
+  return (
+    <div className="avatar-menu" ref={menuRef}>
+      <button type="button" className="avatar-btn" onClick={() => setOpen(!open)} aria-label="用户菜单">
+        {input.avatarUrl ? (
+          <img className="avatar-btn-img" src={input.avatarUrl} alt="" />
+        ) : (
+          <span className="avatar-chip">{initial}</span>
+        )}
+      </button>
+      {open && (
+        <div className="avatar-dropdown">
+          <div className="avatar-dropdown-user">
+            {input.avatarUrl ? (
+              <img className="avatar-dropdown-img" src={input.avatarUrl} alt="" />
+            ) : (
+              <span className="avatar-chip avatar-chip-lg">{initial}</span>
+            )}
+            <div>
+              <strong>{input.nickname}</strong>
+              <span>{input.email}</span>
+            </div>
+          </div>
+          <div className="avatar-dropdown-divider" />
+          <button type="button" className="avatar-dropdown-item" onClick={() => { setOpen(false); input.onAccount(); }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            个人中心
+          </button>
+          <button type="button" className="avatar-dropdown-item avatar-dropdown-item-danger" onClick={() => { setOpen(false); input.onLogout(); }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16,17 21,12 16,7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            退出登录
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const initialView = parseHash();
   const [token, setToken] = useState<string | null>(() => getToken());
@@ -1089,6 +1142,7 @@ export default function App() {
   const [gameDetail, setGameDetail] = useState<GameDetail | null>(null);
   const [regionalPrices, setRegionalPrices] = useState<RegionalPriceSet | null>(null);
   const [regionalPricesLoading, setRegionalPricesLoading] = useState(false);
+  const [priceMapHtml, setPriceMapHtml] = useState<string | null>(null);
   const [accountInfo, setAccountInfo] = useState<AccountInfo | null>(null);
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [otpCountdown, setOtpCountdown] = useState(0);
@@ -1103,9 +1157,12 @@ export default function App() {
   const [loginForm] = Form.useForm<{ email: string; password: string }>();
   const [registerForm] = Form.useForm<{ email: string; code: string; password: string; confirmPassword: string }>();
   const [bindForm] = Form.useForm<{ sessionToken: string; region: "JP" | "GLOBAL" | "UNKNOWN" }>();
-  const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string }>();
+  const [correctionForm] = Form.useForm<{ type: CorrectionType; hours: number; reason: string; date: dayjs.Dayjs | null }>();
   const hasHandledCatalogPageSizeChange = useRef(false);
   const nickname = getNickname(user?.email);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(() => {
+    try { return localStorage.getItem("nintendo_avatar"); } catch { return null; }
+  });
   const marketMode = displayPreference?.marketMode ?? "DOMESTIC";
   const gamePlayerRating = gameDetail?.playerRating ?? DEFAULT_PLAYER_RATING;
   const gameCriticScore = typeof gameDetail?.criticScore === "number" ? gameDetail.criticScore : null;
@@ -1438,10 +1495,15 @@ export default function App() {
   async function fetchRegionalPrices(externalId: string) {
     setRegionalPricesLoading(true);
     try {
-      const response = await api.get<RegionalPriceSet>(`/api/catalog/games/${externalId}/prices`);
-      setRegionalPrices(response.data);
+      const [pricesRes, mapRes] = await Promise.allSettled([
+        api.get<RegionalPriceSet>(`/api/catalog/games/${externalId}/prices`),
+        api.get(`/api/catalog/games/${externalId}/pricemap`, { responseType: "text" })
+      ]);
+      setRegionalPrices(pricesRes.status === "fulfilled" ? pricesRes.value.data : null);
+      setPriceMapHtml(mapRes.status === "fulfilled" ? mapRes.value.data : null);
     } catch {
       setRegionalPrices(null);
+      setPriceMapHtml(null);
     } finally {
       setRegionalPricesLoading(false);
     }
@@ -1520,6 +1582,7 @@ export default function App() {
         setGameDetail(null);
         setCatalogDetail(null);
         setRegionalPrices(null);
+        setPriceMapHtml(null);
       }
     } catch (error) {
       setErrorText(getErrorMessage(error, "页面数据加载失败，请稍后再试"));
@@ -1586,17 +1649,36 @@ export default function App() {
     };
   }, [otpCountdown]);
 
+  function getAuthErrorMessage(error: unknown, fallback: string): string {
+    const msg = getErrorMessage(error, "");
+    const map: Record<string, string> = {
+      "Email already registered": "该邮箱已被注册，请直接登录",
+      "Invalid or expired verification code": "验证码错误或已过期，请重新获取",
+      "Invalid email or password": "邮箱或密码错误",
+      "Invalid payload": "请检查输入内容是否正确",
+      "Failed to create user": "注册失败，请稍后再试",
+      "Failed to hash password": "注册失败，请稍后再试",
+      "Verification failed": "验证码验证失败，请稍后再试",
+    };
+    return map[msg] ?? fallback ?? msg;
+  }
+
   async function requestRegisterCode() {
     if (otpCountdown > 0) return;
     try {
       setActionLoading(true);
-      const payload = await registerForm.validateFields(["email"]);
-      const response = await api.post<{ devCode?: string; emailSent?: boolean }>("/api/auth/send-code", { email: payload.email });
+      const emailInput = document.querySelector('.auth-panel input[type="text"], .auth-panel input:not([type])') as HTMLInputElement | null;
+      const emailValue = emailInput?.value?.trim() ?? "";
+      if (!emailValue || !emailValue.includes("@")) {
+        message.error("请输入有效邮箱地址");
+        return;
+      }
+      const response = await api.post<{ devCode?: string; emailSent?: boolean }>("/api/auth/send-code", { email: emailValue });
       setDevVerifyCode(response.data.devCode ?? null);
       message.success(response.data.emailSent ? "验证码已发送到邮箱，请查收" : "验证码已生成，请继续注册");
       setOtpCountdown(60);
     } catch (error) {
-      message.error(getErrorMessage(error, "获取验证码失败"));
+      message.error(getAuthErrorMessage(error, "获取验证码失败，请稍后再试"));
     } finally {
       setActionLoading(false);
     }
@@ -1605,8 +1687,18 @@ export default function App() {
   async function handleLogin() {
     try {
       setActionLoading(true);
-      const values = await loginForm.validateFields();
-      const response = await api.post<{ token: string; user: User }>("/api/auth/login", values);
+      const inputs = document.querySelectorAll('.auth-panel input') as NodeListOf<HTMLInputElement>;
+      const emailValue = inputs[0]?.value?.trim() ?? "";
+      const passwordValue = inputs[1]?.value ?? "";
+      if (!emailValue || !emailValue.includes("@")) {
+        message.error("请输入有效邮箱地址");
+        return;
+      }
+      if (!passwordValue) {
+        message.error("请输入密码");
+        return;
+      }
+      const response = await api.post<{ token: string; user: User }>("/api/auth/login", { email: emailValue, password: passwordValue });
       saveToken(response.data.token);
       setToken(response.data.token);
       setUser(response.data.user);
@@ -1614,7 +1706,7 @@ export default function App() {
       navigate({ page: "home" });
       message.success("已进入 Nintendo GameTime");
     } catch (error) {
-      message.error(getErrorMessage(error, "登录失败"));
+      message.error(getAuthErrorMessage(error, "登录失败，请检查邮箱和密码"));
     } finally {
       setActionLoading(false);
     }
@@ -1623,15 +1715,31 @@ export default function App() {
   async function handleRegister() {
     try {
       setActionLoading(true);
-      const values = await registerForm.validateFields();
-      if (values.password !== values.confirmPassword) {
-        message.error("两次输入的密码不一致");
+      const inputs = document.querySelectorAll('.auth-panel input') as NodeListOf<HTMLInputElement>;
+      const emailValue = inputs[0]?.value?.trim() ?? "";
+      const codeValue = inputs[1]?.value?.trim() ?? "";
+      const passwordValue = inputs[2]?.value ?? "";
+      const confirmPasswordValue = inputs[3]?.value ?? "";
+      if (!emailValue || !emailValue.includes("@")) {
+        message.error("请输入有效邮箱地址");
+        return;
+      }
+      if (!codeValue) {
+        message.error("请输入验证码");
+        return;
+      }
+      if (passwordValue.length < 6) {
+        message.error("密码至少需要 6 位字符");
+        return;
+      }
+      if (passwordValue !== confirmPasswordValue) {
+        message.error("两次输入的密码不一致，请重新输入");
         return;
       }
       const response = await api.post<{ token: string; user: User }>("/api/auth/register", {
-        email: values.email,
-        code: values.code,
-        password: values.password
+        email: emailValue,
+        code: codeValue,
+        password: passwordValue
       });
       saveToken(response.data.token);
       setToken(response.data.token);
@@ -1641,7 +1749,7 @@ export default function App() {
       navigate({ page: "home" });
       message.success("注册成功，已自动登录");
     } catch (error) {
-      message.error(getErrorMessage(error, "注册失败"));
+      message.error(getAuthErrorMessage(error, "注册失败，请稍后再试"));
     } finally {
       setActionLoading(false);
     }
@@ -1651,8 +1759,43 @@ export default function App() {
     try {
       setActionLoading(true);
       const values = await bindForm.validateFields();
-      await api.post("/api/accounts/nintendo/bind", values);
-      message.success("账号已绑定，并已触发同步");
+      const raw = values.sessionToken || "";
+
+      // Extract session_token_code and state from the Nintendo callback URL.
+      // The URL looks like: npf71b963c1b7b6d119://auth#session_token_code=eyJ...&state=XXXX.YYYY
+      let sessionTokenCode = "";
+      let state = "";
+
+      // Try hash fragment (npf71b963c1b7b6d119://auth#session_token_code=...)
+      const hashCodeMatch = raw.match(/session_token_code=([^&\s#]+)/);
+      if (hashCodeMatch) sessionTokenCode = hashCodeMatch[1];
+      const hashStateMatch = raw.match(/[?&#]state=([^&\s#]+)/);
+      if (hashStateMatch) state = hashStateMatch[1];
+
+      // Try query params (if pasted as query string)
+      if (!sessionTokenCode) {
+        const queryCodeMatch = raw.match(/[?&]session_token_code=([^&\s#]+)/);
+        if (queryCodeMatch) sessionTokenCode = queryCodeMatch[1];
+      }
+      if (!state) {
+        const queryStateMatch = raw.match(/[?&]state=([^&\s#]+)/);
+        if (queryStateMatch) state = queryStateMatch[1];
+      }
+
+      if (sessionTokenCode) {
+        // New PKCE flow
+        await api.post("/api/accounts/nintendo/bind", {
+          sessionTokenCode,
+          state,
+        });
+      } else {
+        // Fallback: maybe it's a raw session_token
+        const stMatch = raw.match(/session_token=([^&\s#]+)/);
+        const st = stMatch ? stMatch[1] : raw.trim();
+        await api.post("/api/accounts/nintendo/bind", { sessionToken: st });
+      }
+
+      message.success("账号已绑定！点击立即同步获取时长数据");
       bindForm.resetFields(["sessionToken"]);
       await loadCurrentView({ page: "account" });
     } catch (error) {
@@ -1745,7 +1888,8 @@ export default function App() {
         gameId,
         type: values.type,
         minutes: Math.round(values.hours * 60),
-        reason: values.reason
+        reason: values.reason,
+        date: values.date ? values.date.format("YYYY-MM-DD") : null
       });
       correctionForm.resetFields(["reason"]);
       message.success("时长修正已保存");
@@ -1835,79 +1979,48 @@ export default function App() {
           ))}
         </div>
         <div className="auth-panel">
-          <span className="eyebrow">Nintendo GameTime</span>
+          <div className="auth-brand">
+            <div className="brand-chip auth-brand-chip">NS</div>
+            <h2>Nintendo GameTime</h2>
+            <p>管理你的 Switch 游戏库与游玩时长</p>
+          </div>
+
+          <div className="auth-tabs">
+            <button type="button" className={authView === "login" ? "auth-tab-active" : ""} onClick={() => { setAuthView("login"); loginForm.resetFields(); }}>登录</button>
+            <button type="button" className={authView === "register" ? "auth-tab-active" : ""} onClick={() => { setAuthView("register"); registerForm.resetFields(); }}>注册</button>
+          </div>
+
           {authView === "login" ? (
-            <>
-              <h1>欢迎回来</h1>
-              <p>使用邮箱和密码登录，继续管理你的游戏库。</p>
-              <Form layout="vertical" form={loginForm} initialValues={{ email: "", password: "" }}>
-                <Form.Item
-                  name="email"
-                  label="邮箱"
-                  rules={[{ required: true, type: "email", message: "请输入有效邮箱" }]}
-                >
-                  <Input placeholder="you@example.com" />
-                </Form.Item>
-                <Form.Item
-                  name="password"
-                  label="密码"
-                  rules={[{ required: true, message: "请输入密码" }]}
-                >
-                  <Input.Password placeholder="请输入密码" />
-                </Form.Item>
-                <div className="row-actions">
-                  <Button type="primary" onClick={handleLogin} loading={actionLoading} block>
-                    登录
-                  </Button>
-                </div>
-              </Form>
-              <p className="auth-switch">
-                没有账号？<Button type="link" onClick={() => { setAuthView("register"); loginForm.resetFields(); }}>去注册</Button>
-              </p>
-            </>
+            <Form layout="vertical" form={loginForm} initialValues={{ email: "", password: "" }} style={{marginTop: "1.2rem"}}>
+              <Form.Item name="email" rules={[{ required: true, type: "email", message: "请输入有效邮箱" }]}>
+                <Input placeholder="邮箱地址" size="large" />
+              </Form.Item>
+              <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
+                <Input.Password placeholder="密码" size="large" />
+              </Form.Item>
+              <Button type="primary" onClick={handleLogin} loading={actionLoading} block size="large">登录</Button>
+            </Form>
           ) : (
-            <>
-              <h1>创建账号</h1>
-              <p>注册后可以同步 Nintendo 账号、管理游戏库和时长修正。</p>
-              <Form layout="vertical" form={registerForm} initialValues={{ email: "", code: "", password: "", confirmPassword: "" }}>
-                <Form.Item
-                  name="email"
-                  label="邮箱"
-                  rules={[{ required: true, type: "email", message: "请输入有效邮箱" }]}
-                >
-                  <Input placeholder="you@example.com" />
-                </Form.Item>
-                <Form.Item name="code" label="验证码" rules={[{ required: true, message: "请输入验证码" }]}>
-                  <Input placeholder="请输入6位验证码" />
-                </Form.Item>
-                <Form.Item
-                  name="password"
-                  label="密码"
-                  rules={[{ required: true, min: 6, message: "密码至少6位" }]}
-                >
-                  <Input.Password placeholder="至少6位密码" />
-                </Form.Item>
-                <Form.Item
-                  name="confirmPassword"
-                  label="确认密码"
-                  rules={[{ required: true, message: "请再次输入密码" }]}
-                >
-                  <Input.Password placeholder="再次输入密码" />
-                </Form.Item>
-                <div className="row-actions">
-                  <Button onClick={requestRegisterCode} loading={actionLoading} disabled={otpCountdown > 0}>
-                    {otpCountdown > 0 ? `重新获取 (${otpCountdown}s)` : "获取验证码"}
+            <Form layout="vertical" form={registerForm} initialValues={{ email: "", code: "", password: "", confirmPassword: "" }} style={{marginTop: "1.2rem"}}>
+              <Form.Item name="email" rules={[{ required: true, type: "email", message: "请输入有效邮箱" }]}>
+                <Input placeholder="邮箱地址" size="large" />
+              </Form.Item>
+              <Form.Item name="code" rules={[{ required: true, message: "请输入验证码" }]}>
+                <Input placeholder="6位验证码" size="large" suffix={
+                  <Button type="link" size="small" onClick={requestRegisterCode} loading={actionLoading} disabled={otpCountdown > 0} style={{padding:0,height:"auto"}}>
+                    {otpCountdown > 0 ? `${otpCountdown}s` : "获取"}
                   </Button>
-                  <Button type="primary" onClick={handleRegister} loading={actionLoading}>
-                    注册并登录
-                  </Button>
-                </div>
-              </Form>
-              {devVerifyCode && <Alert type="info" showIcon message={`当前开发验证码：${devVerifyCode}`} />}
-              <p className="auth-switch">
-                已有账号？<Button type="link" onClick={() => { setAuthView("login"); registerForm.resetFields(); setDevVerifyCode(null); setOtpCountdown(0); }}>去登录</Button>
-              </p>
-            </>
+                } />
+              </Form.Item>
+              <Form.Item name="password" rules={[{ required: true, min: 6, message: "密码至少6位" }]}>
+                <Input.Password placeholder="密码（至少6位）" size="large" />
+              </Form.Item>
+              <Form.Item name="confirmPassword" rules={[{ required: true, message: "请再次输入密码" }]}>
+                <Input.Password placeholder="确认密码" size="large" />
+              </Form.Item>
+              <Button type="primary" onClick={handleRegister} loading={actionLoading} block size="large">创建账号</Button>
+              {devVerifyCode && <Alert type="info" showIcon message={`开发验证码：${devVerifyCode}`} style={{marginTop:"0.75rem"}} />}
+            </Form>
           )}
         </div>
       </div>
@@ -1949,12 +2062,14 @@ export default function App() {
         </nav>
 
         <div className="account-block">
-          <div className="account-meta">
-            <strong>{nickname}</strong>
-            <span>{formatRelativeTime(summary?.lastSyncAt ?? accountInfo?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}</span>
-          </div>
-          <Button onClick={() => navigate({ page: "account" })}>个人中心</Button>
-          <Button onClick={logout}>退出</Button>
+          <AvatarMenu
+            nickname={nickname}
+            email={user?.email ?? ""}
+            avatarUrl={avatarUrl}
+            lastSync={formatRelativeTime(summary?.lastSyncAt ?? accountInfo?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}
+            onAccount={() => navigate({ page: "account" })}
+            onLogout={logout}
+          />
         </div>
       </header>
 
@@ -1963,19 +2078,50 @@ export default function App() {
         <Spin spinning={bootLoading || actionLoading}>
           {view.page === "home" && (
             <div className="page-grid">
+              <div className="ambient-particles" aria-hidden="true">
+                {Array.from({ length: 12 }, (_, i) => (
+                  <span key={i} className={`ambient-particle ambient-particle-${i % 3}`} />
+                ))}
+              </div>
               <section className="panel hero-panel">
+                <span className="joy-deco joy-deco-left" aria-hidden="true" />
+                <span className="joy-deco joy-deco-right" aria-hidden="true" />
                 <span className="eyebrow">概览</span>
-                <h1 className="hero-title">
+                <h1 className="hero-title hero-title-shimmer">
                   <span>Nintendo</span>
                   <span className="hero-title-switch">Switch</span>
                   <span>GameTime</span>
                 </h1>
                 <p>账号同步负责抓取已有收藏，游戏目录负责手动入库兜底，时长修正统一收口到游戏详情页。</p>
                 <div className="stats-grid">
-                  <div className="stat-card"><span>已拥有游戏</span><strong>{summary?.totalGames ?? 0}</strong></div>
-                  <div className="stat-card"><span>累计时长</span><strong>{formatDuration(summary?.totalMinutes ?? 0)}</strong></div>
-                  <div className="stat-card"><span>目录总价</span><strong>{formatDisplayCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD", marketMode, fxContext)}</strong></div>
-                  <div className="stat-card"><span>近 30 天</span><strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong></div>
+                  <div className="stat-card">
+                    <div className="stat-card-icon"><IconGamepad /></div>
+                    <div className="stat-card-body">
+                      <span>已拥有游戏</span>
+                      <strong>{summary?.totalGames ?? 0}</strong>
+                    </div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-card-icon"><IconClock /></div>
+                    <div className="stat-card-body">
+                      <span>累计时长</span>
+                      <strong>{formatDuration(summary?.totalMinutes ?? 0)}</strong>
+                    </div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-card-icon"><IconPrice /></div>
+                    <div className="stat-card-body">
+                      <span>目录总价</span>
+                      <strong>{formatDisplayCurrency(summary?.totalPriceAmount ?? 0, summary?.priceCurrency ?? "USD", marketMode, fxContext)}</strong>
+                    </div>
+                  </div>
+                  <div className="stat-card">
+                    <div className="stat-card-icon"><IconCalendar /></div>
+                    <div className="stat-card-body">
+                      <span>近 30 天</span>
+                      <strong>{formatDuration(summary?.recent30Minutes ?? 0)}</strong>
+                    </div>
+                  </div>
                 </div>
                 <div className="row-actions">
                   <Button type="primary" onClick={() => navigate(getLibraryView())}>浏览游戏目录</Button>
@@ -2009,7 +2155,17 @@ export default function App() {
                 {dashboardGames.length > 0 ? (
                   <div className="dashboard-arcade">
                     <div className="dashboard-stage">
-                      <div className="dashboard-chart-card dashboard-orbit-card">
+                      <div
+                        className="dashboard-chart-card dashboard-orbit-card"
+                        onMouseMove={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const x = ((e.clientX - rect.left) / rect.width - 0.5) * 2;
+                          const y = ((e.clientY - rect.top) / rect.height - 0.5) * 2;
+                          e.currentTarget.style.setProperty("--mx", String(x));
+                          e.currentTarget.style.setProperty("--my", String(y));
+                        }}
+                      >
+                        <div className="dashboard-orbit-atmosphere" />
                         <div className="dashboard-orbit-glow" />
                         {dashboardDonutOption ? (
                           <ReactECharts
@@ -2066,24 +2222,33 @@ export default function App() {
                           <button
                             key={game.id}
                             type="button"
-                            className="dashboard-row dashboard-boss-row"
+                            className="dashboard-row boss-card"
                             onClick={() => openGameDetail(game.id)}
                             style={{ "--row-color": color } as CSSProperties}
                           >
-                            <div className="dashboard-row-head">
-                              <RankBadge rank={index + 1} />
-                              <span className="dashboard-swatch" style={{ backgroundColor: color }} />
-                              <strong>{getDashboardTitle(game, marketMode)}</strong>
-                              <span>{formatDuration(minutes)} / {share}%</span>
-                            </div>
-                            <div className="dashboard-bar-track dashboard-boss-track">
-                              <div
-                                className="dashboard-bar-fill dashboard-boss-fill"
-                                style={{
-                                  width: `${width}%`,
-                                  background: `linear-gradient(90deg, ${color}, ${color}cc)`
-                                }}
-                              />
+                            <img
+                              className="boss-card-cover"
+                              src={getProxiedImageUrl(game.coverUrl, "hero")}
+                              alt=""
+                              loading="lazy"
+                            />
+                            <div className="boss-card-body">
+                              <div className="boss-card-meta">
+                                <strong>{getDashboardTitle(game, marketMode)}</strong>
+                                <span>{formatDuration(minutes)}</span>
+                              </div>
+                              <div className="boss-card-bar-wrap">
+                                <div className="dashboard-bar-track">
+                                  <div
+                                    className="dashboard-bar-fill"
+                                    style={{
+                                      width: `${width}%`,
+                                      background: `linear-gradient(90deg, ${color}, ${color}cc)`
+                                    }}
+                                  />
+                                </div>
+                                <span className="boss-card-pct">{share}%</span>
+                              </div>
                             </div>
                           </button>
                         );
@@ -2146,25 +2311,34 @@ export default function App() {
                         <button
                           key={game.id}
                           type="button"
-                          className="dashboard-row ranking-row"
+                          className="dashboard-row boss-card"
                           onClick={() => openGameDetail(game.id)}
+                          style={{ "--row-color": color } as CSSProperties}
                         >
-                          <div className="dashboard-row-head ranking-row-head">
-                            <div className="ranking-meta">
+                          <img
+                            className="boss-card-cover"
+                            src={getProxiedImageUrl(game.coverUrl, "hero")}
+                            alt=""
+                            loading="lazy"
+                          />
+                          <div className="boss-card-body">
+                            <div className="boss-card-meta">
                               <RankBadge rank={index + 1} />
-                              <span className="dashboard-swatch" style={{ backgroundColor: color }} />
+                              <strong>{getDisplayTitle(game, marketMode)}</strong>
+                              <span>{formatDuration(minutes)}</span>
                             </div>
-                            <strong>{getDisplayTitle(game, marketMode)}</strong>
-                            <span>{formatDuration(minutes)} / {share}%</span>
-                          </div>
-                          <div className="dashboard-bar-track">
-                            <div
-                              className="dashboard-bar-fill"
-                              style={{
-                                width: `${width}%`,
-                                background: `linear-gradient(90deg, ${color}, ${color}cc)`
-                              }}
-                            />
+                            <div className="boss-card-bar-wrap">
+                              <div className="dashboard-bar-track">
+                                <div
+                                  className="dashboard-bar-fill"
+                                  style={{
+                                    width: `${width}%`,
+                                    background: `linear-gradient(90deg, ${color}, ${color}cc)`
+                                  }}
+                                />
+                              </div>
+                              <span className="boss-card-pct">{share}%</span>
+                            </div>
                           </div>
                         </button>
                       );
@@ -2305,6 +2479,7 @@ export default function App() {
                 loading={regionalPricesLoading}
                 cheapestRegion={regionalPrices?.cheapestRegion ?? null}
                 fxContext={fxContext}
+                priceMapHtml={priceMapHtml}
               />
             </div>
           )}
@@ -2388,6 +2563,7 @@ export default function App() {
                 loading={regionalPricesLoading}
                 cheapestRegion={regionalPrices?.cheapestRegion ?? null}
                 fxContext={fxContext}
+                priceMapHtml={priceMapHtml}
               />
               {false && (
               <section className="panel panel-wide detail-hero">
@@ -2462,9 +2638,12 @@ export default function App() {
                 <Form
                   layout="vertical"
                   form={correctionForm}
-                  initialValues={{ type: "ADD_DELTA" as const, hours: 0.5, reason: "" }}
+                  initialValues={{ type: "ADD_DELTA" as const, hours: 0.5, reason: "", date: dayjs() }}
                   onFinish={() => submitCorrection(gameDetail!.id)}
                 >
+                  <Form.Item name="date" label="游玩日期" rules={[{ required: true, message: "请选择日期" }]}>
+                    <DatePicker style={{ width: "100%" }} />
+                  </Form.Item>
                   <div className="form-split">
                     <Form.Item name="type" label="修正方式" rules={[{ required: true, message: "请选择修正方式" }]}>
                       <Select
@@ -2489,20 +2668,37 @@ export default function App() {
                 <div className="panel-head"><div><span className="eyebrow">修正记录</span><h2>当前游戏的时长历史</h2></div></div>
                 {gameDetail!.corrections.length > 0 ? (
                   <div className="stack-list">
-                    {gameDetail!.corrections.map((item) => (
-                      <div key={item.id} className="stack-item">
-                        <div>
-                          <strong>{item.type === "SET_TOTAL" ? "设定总时长" : "增减时长"}</strong>
-                          <p>{item.reason}</p>
-                          <span>{formatSimpleDate(item.createdAt)} / {formatDuration(item.minutes)}</span>
+                    {Array.from(
+                      gameDetail!.corrections.reduce((map, item) => {
+                        const dateKey = item.date || item.createdAt.slice(0, 10);
+                        const group = map.get(dateKey) || [];
+                        group.push(item);
+                        map.set(dateKey, group);
+                        return map;
+                      }, new Map<string, CorrectionItem[]>()).entries()
+                    )
+                      .sort(([a], [b]) => b.localeCompare(a))
+                      .map(([dateKey, items]) => (
+                        <div key={dateKey} style={{ marginBottom: 16 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13, color: "#726459", marginBottom: 6, borderBottom: "1px solid rgba(49,36,22,0.12)", paddingBottom: 4 }}>
+                            {dateKey}
+                          </div>
+                          {items.map((item) => (
+                            <div key={item.id} className="stack-item">
+                              <div>
+                                <strong>{item.type === "SET_TOTAL" ? "设定总时长" : "增减时长"}</strong>
+                                <p>{item.reason}</p>
+                                <span>{formatDuration(item.minutes)}</span>
+                              </div>
+                              {!item.revokedAt ? (
+                                <Button onClick={() => revokeCorrection(gameDetail!.id, item.id)}>撤销</Button>
+                              ) : (
+                                <span className="subtle-note">已撤销</span>
+                              )}
+                            </div>
+                          ))}
                         </div>
-                        {!item.revokedAt ? (
-                          <Button onClick={() => revokeCorrection(gameDetail!.id, item.id)}>撤销</Button>
-                        ) : (
-                          <span className="subtle-note">已撤销</span>
-                        )}
-                      </div>
-                    ))}
+                      ))}
                   </div>
                 ) : (
                   <div className="empty-block">这款游戏还没有时长修正记录。</div>
@@ -2512,62 +2708,88 @@ export default function App() {
           )}
 
           {view.page === "account" && (
-            <div className="page-grid">
-              <section className="panel">
-                <div className="panel-head"><div><span className="eyebrow">账号同步</span><h2>绑定 Nintendo 账号</h2></div><Button type="primary" onClick={runSync}>立即同步</Button></div>
-                <div className="status-list">
-                  <div><span>绑定状态</span><strong>{accountInfo ? "已绑定" : "未绑定"}</strong></div>
-                  <div><span>区域</span><strong>{accountInfo?.region ?? "未知"}</strong></div>
-                  <div><span>最近同步</span><strong>{formatSimpleDate(accountInfo?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}</strong></div>
-                  <div><span>失败次数</span><strong>{accountInfo?.syncFailCount ?? 0}</strong></div>
+            <div className="page-grid account-page">
+              {/* ── Profile hero ── */}
+              <section className="panel panel-wide account-hero">
+                <label className="account-avatar-upload" title="点击更换头像">
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const url = reader.result as string;
+                      setAvatarUrl(url);
+                      try { localStorage.setItem("nintendo_avatar", url); } catch {}
+                    };
+                    reader.readAsDataURL(file);
+                  }} />
+                  {avatarUrl ? (
+                    <img className="account-avatar-img" src={avatarUrl} alt="" />
+                  ) : (
+                    <span className="avatar-chip avatar-chip-xl">{nickname.charAt(0).toUpperCase()}</span>
+                  )}
+                  <span className="account-avatar-hint">点击更换</span>
+                </label>
+                <div className="account-hero-info">
+                  <h1>{nickname}</h1>
+                  <p>{user?.email}</p>
+                  <div className="account-hero-stats">
+                    <span>{summary?.totalGames ?? 0} 款游戏</span>
+                    <span className="account-hero-dot" />
+                    <span>{formatDuration(summary?.totalMinutes ?? 0)}</span>
+                    <span className="account-hero-dot" />
+                    <span>同步于 {formatSimpleDate(summary?.lastSyncAt ?? null)}</span>
+                  </div>
                 </div>
-                {syncStatus?.errorSummary && <Alert type="warning" showIcon message={`最近一次同步失败：${syncStatus.errorSummary}`} />}
               </section>
 
-              <section className="panel">
-                <div className="panel-head"><div><span className="eyebrow">显示模式</span><h2>内容面向切换</h2></div></div>
-                <div className="status-list">
-                  <div><span>当前模式</span><strong>{marketMode === "DOMESTIC" ? "国内模式" : "海外模式"}</strong></div>
-                  <div><span>游戏名与介绍</span><strong>{marketMode === "DOMESTIC" ? "官方中文" : "英文原文"}</strong></div>
-                  <div><span>价格显示</span><strong>{marketMode === "DOMESTIC" ? "人民币换算" : "原始币种"}</strong></div>
-                  <div><span>汇率日期</span><strong>{fxContext?.asOf ?? "待同步"}</strong></div>
-                </div>
-                <div className="stack-list">
-                  <Select
-                    value={pendingMarketMode}
-                    onChange={(value) => setPendingMarketMode(value)}
-                    options={[
-                      { value: "DOMESTIC", label: "国内模式" },
-                      { value: "GLOBAL", label: "海外模式" }
-                    ]}
-                  />
-                  <Button type="primary" block onClick={saveDisplayPreference}>
-                    保存显示模式
-                  </Button>
+              {/* ── Sync + Display row ── */}
+              <section className="panel account-panel">
+                <div className="account-row">
+                  <div className="account-row-item">
+                    <h3>Nintendo 同步</h3>
+                    <p>{accountInfo ? `已绑定 · ${accountInfo.region}` : "未绑定"}</p>
+                    <p className="account-sub">最近同步：{formatSimpleDate(accountInfo?.lastSyncAt ?? syncStatus?.finishedAt ?? null)}</p>
+                    {syncStatus?.errorSummary && <Alert type="warning" showIcon message={syncStatus.errorSummary} style={{marginTop:"0.5rem"}} />}
+                    <div style={{marginTop:"0.75rem"}}><Button size="small" onClick={runSync}>立即同步</Button></div>
+                  </div>
+                  <div className="account-row-divider" />
+                  <div className="account-row-item">
+                    <h3>显示模式</h3>
+                    <p>{marketMode === "DOMESTIC" ? "国内模式 · 中文 · 人民币" : "海外模式 · 英文 · 原币种"}</p>
+                    <p className="account-sub">汇率日期：{fxContext?.asOf ?? "—"}</p>
+                    <div style={{marginTop:"0.75rem", display:"flex", gap:"0.5rem"}}>
+                      <Select size="small" value={pendingMarketMode} onChange={(v) => setPendingMarketMode(v)}
+                        options={[{ value: "DOMESTIC", label: "国内" }, { value: "GLOBAL", label: "海外" }]} style={{width:90}} />
+                      <Button size="small" type="primary" onClick={saveDisplayPreference}>保存</Button>
+                    </div>
+                  </div>
                 </div>
               </section>
 
-              <section className="panel">
-                <div className="panel-head"><div><span className="eyebrow">绑定表单</span><h2>更新会话 Token</h2></div></div>
-                <Form layout="vertical" form={bindForm} initialValues={{ region: "JP" as const, sessionToken: "" }} onFinish={bindNintendo}>
-                  <Form.Item
-                    name="sessionToken"
-                    label="Nintendo Session Token"
-                    rules={[{ required: true, min: 8, message: "请输入有效的 Session Token" }]}
-                  >
-                    <Input.Password placeholder="粘贴你的 Nintendo Session Token" />
+              {/* ── Token bind ── */}
+              <section className="panel account-panel">
+                <h3>绑定 Nintendo 账号</h3>
+                <p className="account-sub" style={{marginBottom:"0.75rem"}}>
+                  点击下方按钮跳转 Nintendo 官网登录。登录成功后浏览器地址栏会出现 <code>npf71b963c1b7b6d119://auth#session_token_code=...</code>，
+                  请<strong>复制整段地址</strong>粘贴到下方输入框完成绑定。
+                </p>
+                <div style={{display:"flex", gap:"0.6rem", alignItems:"center", flexWrap:"wrap", marginBottom:"0.75rem"}}>
+                  <Button type="primary" size="large" onClick={() => {
+                    window.open("/api/auth/nintendo/login", "_blank");
+                  }}>🔗 打开 Nintendo 登录页</Button>
+                </div>
+                <Form layout="inline" form={bindForm} initialValues={{ sessionToken: "" }} onFinish={bindNintendo}>
+                  <Form.Item name="sessionToken" rules={[{ required: true, message: "请粘贴 Nintendo 登录成功后的回调地址" }]}>
+                    <Input placeholder="粘贴 npf71b963c1b7b6d119://auth#session_token_code=... 整段地址" style={{width: 420}} />
                   </Form.Item>
-                  <Form.Item name="region" label="账号区域">
-                    <Select
-                      options={[
-                        { value: "JP", label: "日本" },
-                        { value: "GLOBAL", label: "海外" },
-                        { value: "UNKNOWN", label: "未知" }
-                      ]}
-                    />
+                  <Form.Item>
+                    <Button htmlType="submit" type="primary">绑定</Button>
                   </Form.Item>
-                  <Button htmlType="submit" type="primary" block>绑定并同步</Button>
                 </Form>
+                <p className="account-sub" style={{marginTop:"0.5rem", fontSize:"0.78rem"}}>
+                  💡 登录成功后会跳转到一个报错页面（打不开 npf71b963c1b7b6d119:// 协议），这时<strong>复制浏览器地址栏中完整 URL</strong>（包含 session_token_code= 和 state=），直接粘贴即可。
+                </p>
               </section>
             </div>
           )}

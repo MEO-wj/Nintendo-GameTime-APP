@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"nintendo-gametime/internal/middleware"
 	"nintendo-gametime/internal/repository"
 	"nintendo-gametime/internal/rvis"
+	"nintendo-gametime/internal/services/crawler"
 )
 
 func main() {
@@ -47,11 +49,13 @@ func main() {
 	// Handlers
 	authH := handler.NewAuthHandler(repo, cfg)
 	gamesH := handler.NewGamesHandler(repo)
-	catalogH := handler.NewCatalogHandler(repo)
+	catalogH := handler.NewCatalogHandler(repo, rvisSvc)
 	dashboardH := handler.NewDashboardHandler(repo, rvisSvc)
 	accountsH := handler.NewAccountsHandler(repo, cfg)
 	correctionsH := handler.NewCorrectionsHandler(repo)
-	syncH := handler.NewSyncHandler(repo)
+	syncH := handler.NewSyncHandler(repo, cfg)
+	crawlerSvc := crawler.New(repo, cfg)
+	crawlerH := handler.NewCrawlerHandler(crawlerSvc)
 
 	// Router
 	if cfg.IsProduction() {
@@ -81,6 +85,10 @@ func main() {
 		auth.POST("/login", authH.Login)
 	}
 
+	// Nintendo OAuth (public — browser redirect without JWT header)
+	r.GET("/api/auth/nintendo/login", accountsH.NintendoLogin)
+	r.GET("/api/auth/nintendo/callback", accountsH.NintendoCallback)
+
 	// Protected
 	api := r.Group("/api")
 	api.Use(middleware.AuthRequired(cfg.JWTSecret, repo))
@@ -98,6 +106,8 @@ func main() {
 		api.GET("/catalog/games", catalogH.ListCatalog)
 		api.GET("/catalog/games/:externalId", catalogH.GetCatalogGame)
 		api.GET("/catalog/games/:externalId/prices", catalogH.GetPrices)
+		api.GET("/catalog/games/:externalId/pricemap", catalogH.GetPriceMap)
+		api.PUT("/catalog/games/:externalId/rating", catalogH.RateCatalogGame)
 		api.GET("/catalog/status", catalogH.GetCatalogStatus)
 
 		// Dashboard
@@ -127,23 +137,55 @@ func main() {
 		internal.POST("/sync/all", func(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"message": "Bulk sync triggered"})
 		})
-		internal.POST("/catalog/refresh", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Catalog refresh triggered"})
-		})
-		internal.POST("/crawler/discover", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Crawler discover triggered"})
-		})
-		internal.POST("/crawler/prices", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Crawler price refresh triggered"})
-		})
-		internal.GET("/crawler/status", func(c *gin.Context) {
-			c.JSON(http.StatusOK, gin.H{"message": "Crawler status"})
-		})
+		internal.POST("/catalog/refresh", crawlerH.TriggerCatalogRefresh)
+		internal.POST("/crawler/discover", crawlerH.TriggerDiscover)
+		internal.POST("/crawler/prices", crawlerH.TriggerPrices)
+		internal.POST("/crawler/metacritic", crawlerH.TriggerMetaCritic)
+		internal.GET("/crawler/status", crawlerH.GetStatus)
 	}
 
-	// Image proxy (placeholder)
+	// Image proxy
 	r.GET("/api/proxy/image", func(c *gin.Context) {
-		c.JSON(http.StatusNotImplemented, gin.H{"message": "Image proxy not yet implemented"})
+		targetURL := c.Query("url")
+		if targetURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "missing url parameter"})
+			return
+		}
+		if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url scheme"})
+			return
+		}
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, targetURL, nil)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid url"})
+			return
+		}
+		req.Header.Set("User-Agent", "NintendoGameTime/1.0")
+		req.Header.Set("Accept", "image/*")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "fetch failed"})
+			return
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 400 {
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upstream returned %d", resp.StatusCode)})
+			return
+		}
+
+		contentType := resp.Header.Get("Content-Type")
+		if contentType == "" {
+			contentType = "image/jpeg"
+		}
+		c.Header("Content-Type", contentType)
+		c.Header("Cache-Control", "public, max-age=86400")
+		c.Header("Access-Control-Allow-Origin", "*")
+
+		c.DataFromReader(http.StatusOK, resp.ContentLength, contentType, resp.Body, nil)
 	})
 
 	// Server
@@ -156,6 +198,11 @@ func main() {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
+
+	// Start crawler scheduler in background
+	crawlerCtx, crawlerCancel := context.WithCancel(context.Background())
+	defer crawlerCancel()
+	go crawlerSvc.StartScheduler(crawlerCtx)
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
