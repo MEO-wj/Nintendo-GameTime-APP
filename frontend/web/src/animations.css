@@ -1,0 +1,170 @@
+/* ===== Dashboard UI Animations ===== */
+
+/* ---- Floating particles ---- */
+@keyframes float-up {
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0.6;
+  }
+  25% {
+    transform: translateY(-50px) translateX(15px) scale(1.1);
+  }
+  50% {
+    transform: translateY(-100px) translateX(-10px) scale(0.9);
+    opacity: 0.35;
+  }
+  75% {
+    transform: translateY(-150px) translateX(8px) scale(1.05);
+    opacity: 0.12;
+  }
+  100% {
+    transform: translateY(-200px) translateX(0) scale(0.8);
+    opacity: 0;
+  }
+}
+
+/* ---- Hero title shimmer sweep ---- */
+@keyframes title-shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+/* ---- Stat card entrance ---- */
+@keyframes stat-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ---- Dashboard row entrance (staggered) ---- */
+@keyframes dashboard-row-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---- Progress bar fill entrance ---- */
+@keyframes bar-fill-in {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+/* ---- Cover image pulse on hover ---- */
+@keyframes cover-pulse {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  }
+  50% {
+    box-shadow: 0 4px 16px rgba(178, 74, 40, 0.25);
+  }
+}
+
+/* ---- Atmosphere breathing ---- */
+@keyframes atmosphere-breathe {
+  0%, 100% {
+    opacity: 0.12;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.22;
+    transform: scale(1.08);
+  }
+}
+
+/* ---- Particle drift (horizontal variant) ---- */
+@keyframes drift-across {
+  0% {
+    transform: translateX(-40px) translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.5;
+  }
+  85% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateX(40px) translateY(-30px);
+    opacity: 0;
+  }
+}
+
+/* ---- Glow pulse for orbit card ---- */
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.08;
+  }
+  50% {
+    opacity: 0.18;
+  }
+}
+
+/* ===== Utility animation classes (applied via CSS) ===== */
+
+/* Entrance animations */
+.stat-card {
+  animation: stat-card-in 450ms var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+.stat-card:nth-child(1) { animation-delay: 0ms; }
+.stat-card:nth-child(2) { animation-delay: 80ms; }
+.stat-card:nth-child(3) { animation-delay: 160ms; }
+.stat-card:nth-child(4) { animation-delay: 240ms; }
+
+.dashboard-row {
+  animation: dashboard-row-in 420ms var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+
+/* Stagger dashboard rows */
+.dashboard-boss-list .dashboard-row:nth-child(1),
+.ranking-list .dashboard-row:nth-child(1) { animation-delay: 60ms; }
+.dashboard-boss-list .dashboard-row:nth-child(2),
+.ranking-list .dashboard-row:nth-child(2) { animation-delay: 120ms; }
+.dashboard-boss-list .dashboard-row:nth-child(3),
+.ranking-list .dashboard-row:nth-child(3) { animation-delay: 180ms; }
+.dashboard-boss-list .dashboard-row:nth-child(4),
+.ranking-list .dashboard-row:nth-child(4) { animation-delay: 240ms; }
+.dashboard-boss-list .dashboard-row:nth-child(5),
+.ranking-list .dashboard-row:nth-child(5) { animation-delay: 300ms; }
+.ranking-list .dashboard-row:nth-child(n+6) { animation-delay: 340ms; }
+.ranking-list .dashboard-row:nth-child(n+8) { animation-delay: 380ms; }
+.ranking-list .dashboard-row:nth-child(n+10) { animation-delay: 420ms; }
+
+/* Bar fill entrance */
+.dashboard-bar-fill {
+  animation: bar-fill-in 700ms var(--ease-out-expo, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  transform-origin: left center;
+}
+
+/* Title shimmer */
+.hero-title-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.4) 45%,
+    rgba(255, 255, 255, 0.7) 50%,
+    rgba(255, 255, 255, 0.4) 55%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: title-shimmer 2.2s ease-out forwards;
+}
