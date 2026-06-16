@@ -42,11 +42,14 @@ type loginReq struct {
 }
 
 func (h *AuthHandler) SendCode(c *gin.Context) {
+	fmt.Printf("[AUTH] SendCode called, content-type: %s\n", c.ContentType())
 	var req sendCodeReq
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid payload"})
+		fmt.Printf("[AUTH] SendCode bind error: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid payload", "error": err.Error()})
 		return
 	}
+	fmt.Printf("[AUTH] SendCode email: %s\n", req.Email)
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 
 	code, err := generateOTP()
@@ -93,7 +96,8 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	codeOK := false
 	if !h.cfg.IsProduction() && code == h.cfg.OTPDevCode {
 		codeOK = true
-	} else {
+	}
+	if !codeOK {
 		var err error
 		codeOK, err = h.repo.ConsumeAuthCode(c.Request.Context(), email, code, time.Now().Format(time.RFC3339))
 		if err != nil {

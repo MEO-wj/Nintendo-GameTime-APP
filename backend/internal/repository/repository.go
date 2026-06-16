@@ -48,7 +48,7 @@ type Repository interface {
 	GetLatestOfficialSnapshotsByUserID(ctx context.Context, userID string) ([]domain.OfficialSnapshotRow, error)
 
 	// Corrections
-	CreateCorrection(ctx context.Context, userID, gameID, corrType string, minutes int, reason, createdAt string) (*domain.CorrectionRow, error)
+	CreateCorrection(ctx context.Context, userID, gameID, corrType string, minutes int, reason, date, createdAt string) (*domain.CorrectionRow, error)
 	ListCorrectionsByUserID(ctx context.Context, userID string, gameID *string) ([]domain.CorrectionRow, error)
 	RevokeCorrection(ctx context.Context, userID, correctionID, revokedAt string) (*domain.CorrectionRow, error)
 

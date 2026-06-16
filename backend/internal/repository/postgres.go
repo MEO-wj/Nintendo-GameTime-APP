@@ -265,7 +265,7 @@ func (r *PostgresRepo) ListGamesPaginatedByUserID(ctx context.Context, userID st
 		return nil, nil, err
 	}
 	defer rows.Close()
-	var result []domain.GameRow
+	result := make([]domain.GameRow, 0)
 	for rows.Next() {
 		var g domain.GameRow
 		if err := rows.Scan(&g.ID, &g.UserID, &g.ExternalID, &g.Title, &g.CoverURL, &g.Region, &g.Platform, &g.PriceJPY, &g.OwnedAt, &g.LastPlayedAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
@@ -307,14 +307,14 @@ func (r *PostgresRepo) UpsertCatalogGame(ctx context.Context, input domain.Upser
 		loc = json.RawMessage(`{}`)
 	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO catalog_games (id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date, price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$17)
+		INSERT INTO catalog_games (id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date, price_amount, price_currency, platform, region, source, localizations, critic_score, last_synced_at, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18)
 		ON CONFLICT (external_id) DO UPDATE SET
 			sort_order=$3, title=$4, cover_url=$5, store_url=$6, description=$7, publisher=$8, release_date=$9,
-			price_amount=$10, price_currency=$11, platform=$12, region=$13, source=$14, localizations=$15, last_synced_at=$16, updated_at=$17`,
+			price_amount=$10, price_currency=$11, platform=$12, region=$13, source=$14, localizations=$15, critic_score=$16, last_synced_at=$17, updated_at=$18`,
 		id, input.ExternalID, input.SortOrder, input.Title, input.CoverURL, input.StoreURL,
 		input.Description, input.Publisher, input.ReleaseDate, input.PriceAmount, input.PriceCurrency,
-		input.Platform, input.Region, input.Source, loc, input.LastSyncedAt, n)
+		input.Platform, input.Region, input.Source, loc, input.CriticScore, input.LastSyncedAt, n)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +323,7 @@ func (r *PostgresRepo) UpsertCatalogGame(ctx context.Context, input domain.Upser
 		CoverURL: input.CoverURL, StoreURL: input.StoreURL, Description: input.Description,
 		Publisher: input.Publisher, ReleaseDate: input.ReleaseDate, PriceAmount: input.PriceAmount,
 		PriceCurrency: input.PriceCurrency, Platform: input.Platform, Region: input.Region,
-		Source: input.Source, Localizations: loc, LastSyncedAt: n, CreatedAt: n, UpdatedAt: n,
+		Source: input.Source, Localizations: loc, CriticScore: input.CriticScore, LastSyncedAt: n, CreatedAt: n, UpdatedAt: n,
 	}, nil
 }
 
@@ -331,11 +331,11 @@ func (r *PostgresRepo) GetCatalogGameByExternalID(ctx context.Context, externalI
 	var g domain.CatalogGameRow
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
-			price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+			price_amount, price_currency, platform, region, source, localizations, critic_score, last_synced_at, created_at, updated_at
 		FROM catalog_games WHERE external_id=$1`, externalID).
 		Scan(&g.ID, &g.ExternalID, &g.SortOrder, &g.Title, &g.CoverURL, &g.StoreURL, &g.Description,
 			&g.Publisher, &g.ReleaseDate, &g.PriceAmount, &g.PriceCurrency, &g.Platform, &g.Region,
-			&g.Source, &g.Localizations, &g.LastSyncedAt, &g.CreatedAt, &g.UpdatedAt)
+			&g.Source, &g.Localizations, &g.CriticScore, &g.LastSyncedAt, &g.CreatedAt, &g.UpdatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -345,7 +345,7 @@ func (r *PostgresRepo) GetCatalogGameByExternalID(ctx context.Context, externalI
 func (r *PostgresRepo) ListCatalogGames(ctx context.Context) ([]domain.CatalogGameRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
-			price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+			price_amount, price_currency, platform, region, source, localizations, critic_score, last_synced_at, created_at, updated_at
 		FROM catalog_games ORDER BY sort_order`)
 	if err != nil {
 		return nil, err
@@ -363,7 +363,7 @@ func (r *PostgresRepo) CountCatalogGames(ctx context.Context) (int, error) {
 func (r *PostgresRepo) ListCatalogGamesBySource(ctx context.Context, source string, limit int) ([]domain.CatalogGameRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, external_id, sort_order, title, cover_url, store_url, description, publisher, release_date,
-			price_amount, price_currency, platform, region, source, localizations, last_synced_at, created_at, updated_at
+			price_amount, price_currency, platform, region, source, localizations, critic_score, last_synced_at, created_at, updated_at
 		FROM catalog_games WHERE source=$1 LIMIT $2`, source, limit)
 	if err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func (r *PostgresRepo) ListCatalogGamesBySource(ctx context.Context, source stri
 func (r *PostgresRepo) ListCatalogGamesWithoutPrices(ctx context.Context, source string, limit int) ([]domain.CatalogGameRow, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT c.id, c.external_id, c.sort_order, c.title, c.cover_url, c.store_url, c.description, c.publisher, c.release_date,
-			c.price_amount, c.price_currency, c.platform, c.region, c.source, c.localizations, c.last_synced_at, c.created_at, c.updated_at
+			c.price_amount, c.price_currency, c.platform, c.region, c.source, c.localizations, c.critic_score, c.last_synced_at, c.created_at, c.updated_at
 		FROM catalog_games c LEFT JOIN regional_prices r ON c.external_id = r.external_id
 		WHERE c.source=$1 AND r.id IS NULL LIMIT $2`, source, limit)
 	if err != nil {
@@ -391,7 +391,7 @@ func scanCatalogRows(rows pgx.Rows) ([]domain.CatalogGameRow, error) {
 		var g domain.CatalogGameRow
 		if err := rows.Scan(&g.ID, &g.ExternalID, &g.SortOrder, &g.Title, &g.CoverURL, &g.StoreURL,
 			&g.Description, &g.Publisher, &g.ReleaseDate, &g.PriceAmount, &g.PriceCurrency,
-			&g.Platform, &g.Region, &g.Source, &g.Localizations, &g.LastSyncedAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			&g.Platform, &g.Region, &g.Source, &g.Localizations, &g.CriticScore, &g.LastSyncedAt, &g.CreatedAt, &g.UpdatedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, g)
@@ -451,20 +451,28 @@ func (r *PostgresRepo) GetLatestOfficialSnapshotsByUserID(ctx context.Context, u
 
 // ─── Corrections ─────────────────────────────────────────────────
 
-func (r *PostgresRepo) CreateCorrection(ctx context.Context, userID, gameID, corrType string, minutes int, reason, createdAt string) (*domain.CorrectionRow, error) {
+func (r *PostgresRepo) CreateCorrection(ctx context.Context, userID, gameID, corrType string, minutes int, reason, date, createdAt string) (*domain.CorrectionRow, error) {
 	id := uuidStr()
+	var dateVal interface{}
+	if date != "" {
+		dateVal = date
+	}
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO playtime_corrections (id, user_id, game_id, type, minutes, reason, created_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`, id, userID, gameID, corrType, minutes, reason, createdAt)
+		INSERT INTO playtime_corrections (id, user_id, game_id, type, minutes, reason, date, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, id, userID, gameID, corrType, minutes, reason, dateVal, createdAt)
 	if err != nil {
 		return nil, err
 	}
 	t, _ := time.Parse(time.RFC3339, createdAt)
-	return &domain.CorrectionRow{ID: id, UserID: userID, GameID: gameID, Type: corrType, Minutes: minutes, Reason: reason, CreatedAt: t}, nil
+	var d *string
+	if date != "" {
+		d = &date
+	}
+	return &domain.CorrectionRow{ID: id, UserID: userID, GameID: gameID, Type: corrType, Minutes: minutes, Reason: reason, Date: d, CreatedAt: t}, nil
 }
 
 func (r *PostgresRepo) ListCorrectionsByUserID(ctx context.Context, userID string, gameID *string) ([]domain.CorrectionRow, error) {
-	query := `SELECT id, user_id, game_id, type, minutes, reason, created_at, revoked_at, deleted_at FROM playtime_corrections WHERE user_id=$1 AND deleted_at IS NULL`
+	query := `SELECT id, user_id, game_id, type, minutes, reason, date, created_at, revoked_at, deleted_at FROM playtime_corrections WHERE user_id=$1 AND deleted_at IS NULL`
 	args := []any{userID}
 	if gameID != nil {
 		query += ` AND game_id=$2`
@@ -479,7 +487,7 @@ func (r *PostgresRepo) ListCorrectionsByUserID(ctx context.Context, userID strin
 	var result []domain.CorrectionRow
 	for rows.Next() {
 		var c domain.CorrectionRow
-		if err := rows.Scan(&c.ID, &c.UserID, &c.GameID, &c.Type, &c.Minutes, &c.Reason, &c.CreatedAt, &c.RevokedAt, &c.DeletedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.UserID, &c.GameID, &c.Type, &c.Minutes, &c.Reason, &c.Date, &c.CreatedAt, &c.RevokedAt, &c.DeletedAt); err != nil {
 			return nil, err
 		}
 		result = append(result, c)

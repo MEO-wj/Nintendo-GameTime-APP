@@ -21,17 +21,22 @@ func NewCorrectionsHandler(repo repository.Repository) *CorrectionsHandler {
 func (h *CorrectionsHandler) CreateCorrection(c *gin.Context) {
 	auth := middleware.GetAuthUser(c)
 	var req struct {
-		GameID  string `json:"gameId" binding:"required"`
-		Type    string `json:"type" binding:"required,oneof=SET_TOTAL ADD_DELTA"`
-		Minutes int    `json:"minutes" binding:"required"`
-		Reason  string `json:"reason" binding:"required"`
+		GameID  string  `json:"gameId" binding:"required"`
+		Type    string  `json:"type" binding:"required,oneof=SET_TOTAL ADD_DELTA"`
+		Minutes int     `json:"minutes" binding:"required"`
+		Reason  string  `json:"reason" binding:"required"`
+		Date    *string `json:"date"` // optional, YYYY-MM-DD
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid payload"})
 		return
 	}
 
-	corr, err := h.repo.CreateCorrection(c.Request.Context(), auth.UserID, req.GameID, req.Type, req.Minutes, req.Reason, time.Now().UTC().Format(time.RFC3339))
+	date := ""
+	if req.Date != nil {
+		date = *req.Date
+	}
+	corr, err := h.repo.CreateCorrection(c.Request.Context(), auth.UserID, req.GameID, req.Type, req.Minutes, req.Reason, date, time.Now().UTC().Format(time.RFC3339))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to create correction"})
 		return

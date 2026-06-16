@@ -246,7 +246,7 @@ func (r *MemoryRepo) ListGamesByUserID(_ context.Context, userID string) ([]doma
 func (r *MemoryRepo) ListGamesPaginatedByUserID(ctx context.Context, userID string, offset, limit int) ([]domain.GameRow, *int, error) {
 	all, _ := r.ListGamesByUserID(ctx, userID)
 	if offset >= len(all) {
-		return nil, nil, nil
+		return []domain.GameRow{}, nil, nil
 	}
 	end := offset + limit
 	if end > len(all) {
@@ -290,6 +290,7 @@ func (r *MemoryRepo) UpsertCatalogGame(_ context.Context, input domain.UpsertCat
 		existing.PriceCurrency = input.PriceCurrency
 		existing.Source = input.Source
 		existing.Localizations = input.Localizations
+		existing.CriticScore = input.CriticScore
 		existing.LastSyncedAt = n
 		existing.UpdatedAt = n
 		return existing, nil
@@ -298,7 +299,7 @@ func (r *MemoryRepo) UpsertCatalogGame(_ context.Context, input domain.UpsertCat
 	if loc == nil {
 		loc = json.RawMessage(`{}`)
 	}
-	g := &domain.CatalogGameRow{ID: uuid.New().String(), ExternalID: input.ExternalID, SortOrder: input.SortOrder, Title: input.Title, CoverURL: input.CoverURL, StoreURL: input.StoreURL, Description: input.Description, Publisher: input.Publisher, ReleaseDate: input.ReleaseDate, PriceAmount: input.PriceAmount, PriceCurrency: input.PriceCurrency, Platform: input.Platform, Region: input.Region, Source: input.Source, Localizations: loc, LastSyncedAt: n, CreatedAt: n, UpdatedAt: n}
+	g := &domain.CatalogGameRow{ID: uuid.New().String(), ExternalID: input.ExternalID, SortOrder: input.SortOrder, Title: input.Title, CoverURL: input.CoverURL, StoreURL: input.StoreURL, Description: input.Description, Publisher: input.Publisher, ReleaseDate: input.ReleaseDate, PriceAmount: input.PriceAmount, PriceCurrency: input.PriceCurrency, Platform: input.Platform, Region: input.Region, Source: input.Source, Localizations: loc, CriticScore: input.CriticScore, LastSyncedAt: n, CreatedAt: n, UpdatedAt: n}
 	r.catalogGames[input.ExternalID] = g
 	return g, nil
 }
@@ -397,11 +398,14 @@ func (r *MemoryRepo) GetLatestOfficialSnapshotsByUserID(_ context.Context, userI
 	return result, nil
 }
 
-func (r *MemoryRepo) CreateCorrection(_ context.Context, userID, gameID, corrType string, minutes int, reason, createdAt string) (*domain.CorrectionRow, error) {
+func (r *MemoryRepo) CreateCorrection(_ context.Context, userID, gameID, corrType string, minutes int, reason, date, createdAt string) (*domain.CorrectionRow, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	t, _ := time.Parse(time.RFC3339, createdAt)
 	c := &domain.CorrectionRow{ID: uuid.New().String(), UserID: userID, GameID: gameID, Type: corrType, Minutes: minutes, Reason: reason, CreatedAt: t}
+	if date != "" {
+		c.Date = &date
+	}
 	r.corrections[c.ID] = c
 	return c, nil
 }
