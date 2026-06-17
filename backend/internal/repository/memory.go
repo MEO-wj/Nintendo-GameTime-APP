@@ -98,6 +98,22 @@ func (r *MemoryRepo) UpdateUserPassword(_ context.Context, userID, passwordHash 
 	return nil
 }
 
+func (r *MemoryRepo) UpdateUserProfile(_ context.Context, userID string, nickname, avatarUrl *string) (*domain.User, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	u, ok := r.users[userID]
+	if !ok {
+		return nil, nil
+	}
+	if nickname != nil {
+		u.Nickname = nickname
+	}
+	if avatarUrl != nil {
+		u.AvatarUrl = avatarUrl
+	}
+	return u, nil
+}
+
 func (r *MemoryRepo) GetUserPreference(_ context.Context, userID string) (*domain.UserPreference, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -165,6 +181,18 @@ func (r *MemoryRepo) GetNintendoAccountByUserID(_ context.Context, userID string
 		return nil, nil
 	}
 	return a, nil
+}
+
+func (r *MemoryRepo) DeleteNintendoAccount(_ context.Context, userID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	a := r.nintendoAccounts[userID]
+	if a != nil {
+		now := time.Now().UTC()
+		a.DeletedAt = &now
+		a.UpdatedAt = now
+	}
+	return nil
 }
 
 func (r *MemoryRepo) ListActiveNintendoAccounts(_ context.Context) ([]domain.NintendoAccount, error) {

@@ -12,6 +12,7 @@ type Repository interface {
 	GetUserByID(ctx context.Context, id string) (*domain.User, error)
 	GetUserByEmail(ctx context.Context, email string) (*domain.User, error)
 	UpdateUserPassword(ctx context.Context, userID, passwordHash string) error
+	UpdateUserProfile(ctx context.Context, userID string, nickname, avatarUrl *string) (*domain.User, error)
 
 	// User Preference
 	GetUserPreference(ctx context.Context, userID string) (*domain.UserPreference, error)
@@ -24,6 +25,7 @@ type Repository interface {
 	// Nintendo Account
 	UpsertNintendoAccount(ctx context.Context, userID, encryptedSession, region string) (*domain.NintendoAccount, error)
 	GetNintendoAccountByUserID(ctx context.Context, userID string) (*domain.NintendoAccount, error)
+	DeleteNintendoAccount(ctx context.Context, userID string) error
 	ListActiveNintendoAccounts(ctx context.Context) ([]domain.NintendoAccount, error)
 	UpdateNintendoSyncState(ctx context.Context, userID string, lastSyncAt *string, syncFailCount *int) error
 

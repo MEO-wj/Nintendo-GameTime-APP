@@ -11,6 +11,8 @@ type User struct {
 	ID           string     `json:"id"`
 	Email        string     `json:"email"`
 	PasswordHash *string    `json:"-"`
+	Nickname     *string    `json:"nickname,omitempty"`
+	AvatarUrl    *string    `json:"avatarUrl,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
 }
 

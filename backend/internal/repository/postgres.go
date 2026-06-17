@@ -65,8 +65,8 @@ func (r *PostgresRepo) UpsertUserByEmail(ctx context.Context, email string) (*do
 func (r *PostgresRepo) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
 	var u domain.User
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, created_at FROM users WHERE id=$1`, id).
-		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		`SELECT id, email, password_hash, nickname, avatar_url, created_at FROM users WHERE id=$1`, id).
+		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.AvatarUrl, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -76,8 +76,8 @@ func (r *PostgresRepo) GetUserByID(ctx context.Context, id string) (*domain.User
 func (r *PostgresRepo) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var u domain.User
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, password_hash, created_at FROM users WHERE email=$1`, email).
-		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.CreatedAt)
+		`SELECT id, email, password_hash, nickname, avatar_url, created_at FROM users WHERE email=$1`, email).
+		Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.AvatarUrl, &u.CreatedAt)
 	if err == pgx.ErrNoRows {
 		return nil, nil
 	}
@@ -87,6 +87,16 @@ func (r *PostgresRepo) GetUserByEmail(ctx context.Context, email string) (*domai
 func (r *PostgresRepo) UpdateUserPassword(ctx context.Context, userID, passwordHash string) error {
 	_, err := r.pool.Exec(ctx, `UPDATE users SET password_hash=$1 WHERE id=$2`, passwordHash, userID)
 	return err
+}
+
+func (r *PostgresRepo) UpdateUserProfile(ctx context.Context, userID string, nickname, avatarUrl *string) (*domain.User, error) {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET nickname=COALESCE($1, nickname), avatar_url=COALESCE($2, avatar_url) WHERE id=$3`,
+		nickname, avatarUrl, userID)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetUserByID(ctx, userID)
 }
 
 // ─── User Preference ─────────────────────────────────────────────
@@ -164,6 +174,11 @@ func (r *PostgresRepo) GetNintendoAccountByUserID(ctx context.Context, userID st
 		return nil, nil
 	}
 	return &a, err
+}
+
+func (r *PostgresRepo) DeleteNintendoAccount(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE nintendo_accounts SET deleted_at=$1, updated_at=$2 WHERE user_id=$3 AND deleted_at IS NULL`, now(), now(), userID)
+	return err
 }
 
 func (r *PostgresRepo) ListActiveNintendoAccounts(ctx context.Context) ([]domain.NintendoAccount, error) {

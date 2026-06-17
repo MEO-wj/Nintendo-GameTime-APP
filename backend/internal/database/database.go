@@ -62,6 +62,8 @@ func EnsureSchema(ctx context.Context, pool *pgxpool.Pool) error {
 
 	// Migrations
 	migrations := `ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT NULL;
+	ALTER TABLE users ADD COLUMN IF NOT EXISTS nickname TEXT NULL;
+	ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT NULL;
 	ALTER TABLE catalog_games ADD COLUMN IF NOT EXISTS critic_score INT NULL;
 	ALTER TABLE playtime_corrections ADD COLUMN IF NOT EXISTS date TEXT NULL;`
 	if _, err := pool.Exec(ctx, migrations); err != nil {
