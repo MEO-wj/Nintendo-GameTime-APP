@@ -87,6 +87,7 @@ func main() {
 
 	// Nintendo OAuth (public — browser redirect without JWT header)
 	r.GET("/api/auth/nintendo/login", accountsH.NintendoLogin)
+	r.GET("/api/auth/nintendo/login-url", accountsH.GetNintendoLoginURL)
 	r.GET("/api/auth/nintendo/callback", accountsH.NintendoCallback)
 
 	// Protected
@@ -117,6 +118,9 @@ func main() {
 		// Accounts
 		api.GET("/accounts/nintendo", accountsH.GetNintendo)
 		api.POST("/accounts/nintendo/bind", accountsH.BindNintendo)
+		api.DELETE("/accounts/nintendo", accountsH.UnbindNintendo)
+		api.GET("/accounts/profile", accountsH.GetProfile)
+		api.PUT("/accounts/profile", accountsH.UpdateProfile)
 		api.GET("/accounts/preferences", accountsH.GetPreferences)
 		api.PUT("/accounts/preferences", accountsH.UpdatePreferences)
 

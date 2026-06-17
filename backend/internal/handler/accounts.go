@@ -154,6 +154,114 @@ func (h *AccountsHandler) GetPreferences(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"preference": pref, "fx": fx})
 }
 
+// GetNintendoLoginURL returns the full Nintendo authorization URL for the WebView to load directly.
+// This avoids a 302 redirect hop which can cause issues in some network environments.
+func (h *AccountsHandler) GetNintendoLoginURL(c *gin.Context) {
+	verifier, challenge, err := generatePKCE()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate PKCE"})
+		return
+	}
+
+	state, err := encodeState(verifier)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to generate state"})
+		return
+	}
+
+	u, _ := url.Parse("https://accounts.nintendo.com/connect/1.0.0/authorize")
+	q := u.Query()
+	q.Set("client_id", "71b963c1b7b6d119")
+	q.Set("redirect_uri", "npf71b963c1b7b6d119://auth")
+	q.Set("response_type", "session_token_code")
+	q.Set("scope", "openid user user.birthday user.mii user.screenName")
+	q.Set("session_token_code_challenge", challenge)
+	q.Set("session_token_code_challenge_method", "S256")
+	q.Set("state", state)
+	q.Set("theme", "login_form")
+	u.RawQuery = q.Encode()
+
+	c.JSON(http.StatusOK, gin.H{"url": u.String()})
+}
+
+func (h *AccountsHandler) GetProfile(c *gin.Context) {
+	auth := middleware.GetAuthUser(c)
+	user, err := h.repo.GetUserByID(c.Request.Context(), auth.UserID)
+	if err != nil || user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "User not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"id":        user.ID,
+		"email":     user.Email,
+		"nickname":  user.Nickname,
+		"avatarUrl": user.AvatarUrl,
+	})
+}
+
+func (h *AccountsHandler) UpdateProfile(c *gin.Context) {
+	auth := middleware.GetAuthUser(c)
+	ctx := c.Request.Context()
+
+	var req struct {
+		Nickname  *string `json:"nickname"`
+		AvatarUrl *string `json:"avatarUrl"` // base64 data URL or URL
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid payload"})
+		return
+	}
+
+	// Basic validation
+	if req.Nickname != nil {
+		nick := strings.TrimSpace(*req.Nickname)
+		if nick == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "昵称不能为空"})
+			return
+		}
+		if len(nick) > 32 {
+			c.JSON(http.StatusBadRequest, gin.H{"message": "昵称最多32个字符"})
+			return
+		}
+		req.Nickname = &nick
+	}
+
+	user, err := h.repo.UpdateUserProfile(ctx, auth.UserID, req.Nickname, req.AvatarUrl)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to update profile"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":        user.ID,
+		"email":     user.Email,
+		"nickname":  user.Nickname,
+		"avatarUrl": user.AvatarUrl,
+	})
+}
+
+func (h *AccountsHandler) UnbindNintendo(c *gin.Context) {
+	auth := middleware.GetAuthUser(c)
+	ctx := c.Request.Context()
+
+	account, err := h.repo.GetNintendoAccountByUserID(ctx, auth.UserID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to get account"})
+		return
+	}
+	if account == nil {
+		c.JSON(http.StatusNotFound, gin.H{"message": "未绑定 Nintendo 账号"})
+		return
+	}
+
+	if err := h.repo.DeleteNintendoAccount(ctx, auth.UserID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"message": "Failed to unbind account"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Nintendo account unbound successfully"})
+}
+
 func (h *AccountsHandler) UpdatePreferences(c *gin.Context) {
 	auth := middleware.GetAuthUser(c)
 	var req struct {
