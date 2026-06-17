@@ -96,14 +96,33 @@ func (h *DashboardHandler) GetCharts(c *gin.Context) {
 
 	// Build ranking data
 	type rankItem struct {
-		GameID  string `json:"gameId"`
-		Title   string `json:"title"`
-		Minutes int    `json:"minutes"`
+		GameID   string `json:"gameId"` // internal game UUID for navigation
+		Title    string `json:"title"`
+		ZhTitle  string `json:"zhTitle,omitempty"`
+		Minutes  int    `json:"minutes"`
+		CoverURL string `json:"coverUrl,omitempty"`
 	}
 	var ranking []rankItem
 	for _, g := range games {
 		pt := playtimeMap[g.ID]
-		ranking = append(ranking, rankItem{GameID: g.ExternalID, Title: g.Title, Minutes: pt.TotalMinutes})
+		coverURL := ""
+		zhTitle := ""
+		if catalog, err := h.repo.GetCatalogGameByExternalID(ctx, g.ExternalID); err == nil && catalog != nil {
+			if catalog.CoverURL != nil {
+				coverURL = *catalog.CoverURL
+			}
+			if catalog.Localizations != nil {
+				var loc map[string]interface{}
+				if err := json.Unmarshal(catalog.Localizations, &loc); err == nil {
+					if zh, ok := loc["zhHans"].(map[string]interface{}); ok {
+						if t, ok := zh["title"].(string); ok {
+							zhTitle = t
+						}
+					}
+				}
+			}
+		}
+		ranking = append(ranking, rankItem{GameID: g.ID, Title: g.Title, ZhTitle: zhTitle, Minutes: pt.TotalMinutes, CoverURL: coverURL})
 	}
 	// Sort by minutes desc
 	for i := 0; i < len(ranking); i++ {
@@ -120,6 +139,7 @@ func (h *DashboardHandler) GetCharts(c *gin.Context) {
 	// Build donut data (top 5)
 	type donutItem struct {
 		Name    string `json:"name"`
+		ZhName  string `json:"zhName,omitempty"`
 		Value   int    `json:"value"`
 		GameID  string `json:"gameId"`
 	}
@@ -128,14 +148,22 @@ func (h *DashboardHandler) GetCharts(c *gin.Context) {
 		if i >= 5 {
 			break
 		}
-		donut = append(donut, donutItem{Name: r.Title, Value: r.Minutes, GameID: r.GameID})
+		donut = append(donut, donutItem{Name: r.Title, ZhName: r.ZhTitle, Value: r.Minutes, GameID: r.GameID})
 	}
 
-	// Try R visualization
+	// Try R visualization — always include raw data arrays for mobile clients
 	charts, err := h.rvis.Render(donut, ranking)
 	if err != nil {
-		// Fallback: return raw data matching frontend DashboardCharts interface
 		charts = gin.H{"donut": donut, "ranking": ranking}
+	} else {
+		// Merge raw data into the R visualization response
+		// Use map[string]interface{} not gin.H — JSON unmarshal produces the former
+		if m, ok := charts.(map[string]interface{}); ok {
+			m["donut"] = donut
+			m["ranking"] = ranking
+		} else {
+			charts = gin.H{"donut": donut, "ranking": ranking, "rvis": charts}
+		}
 	}
 
 	c.JSON(http.StatusOK, charts)

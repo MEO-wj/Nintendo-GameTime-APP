@@ -130,9 +130,12 @@ func (s *Service) fallback(donut, ranking interface{}) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"donut":   donutOption,
-		"ranking": rankingOption,
+		// Use "options" key for ECharts configs to avoid clashing with raw data arrays
+		"options": map[string]interface{}{
+			"playtimeDonut":   donutOption,
+			"playtimeRanking": rankingOption,
+		},
 		"renderedAt": time.Now().UTC().Format(time.RFC3339),
-		"engine":  "typescript",
+		"engine":     "typescript",
 	}
 }
