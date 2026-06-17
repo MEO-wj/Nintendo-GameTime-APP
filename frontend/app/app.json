@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Nintendo GameTime",
+    "slug": "nintendo-gametime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0D1117"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nintendo.gametime"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0D1117"
+      },
+      "package": "com.nintendo.gametime"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
